@@ -19,12 +19,12 @@ import DashboardPage from './pages/dashboard';
 const DocumentsPage = React.lazy(() => import('./pages/documents.jsx'));
 const DocumentUploadPage = React.lazy(() => import('./pages/documents-upload.jsx'));
 const ModelsPage = React.lazy(() => import('./pages/models.jsx'));
-// const CreateModelPage = React.lazy(() => import('./pages/models-new.jsx'));
-// const ChatListPage = React.lazy(() => import('./pages/chat.jsx'));
-// const NewChatPage = React.lazy(() => import('./pages/chat-new.jsx'));
+const CreateModelPage = React.lazy(() => import('./pages/models-new.jsx'));
+const ChatListPage = React.lazy(() => import('./pages/chat.jsx'));
+const NewChatPage = React.lazy(() => import('./pages/chat-new.jsx'));
 const SettingsPage = React.lazy(() => import('./pages/settings.jsx'));
-// const ProfileSettingsPage = React.lazy(() => import('./pages/profile-settings.jsx'));
-// const BillingPage = React.lazy(() => import('./pages/billing.jsx'));
+const ProfileSettingsPage = React.lazy(() => import('./pages/profile-settings.jsx'));
+const BillingPage = React.lazy(() => import('./pages/billing.jsx'));
 
 // Business-specific pages (lazy-loaded)
 const TeamManagementPage = React.lazy(() => import('./pages/team.jsx'));
@@ -144,42 +144,42 @@ function App() {
                       <ModelsPage />
                     </Suspense>
                   } />
-                  {/* <Route path="/models/new" element={
+                  <Route path="/models/new" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <CreateModelPage />
                     </Suspense>
-                  } /> */}
+                  } />
                   
                   {/* Chat */}
-                  {/* <Route path="/chat" element={
+                  <Route path="/chat" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <ChatListPage />
                     </Suspense>
-                  } /> */}
-                  {/* <Route path="/chat/new" element={
+                  } />
+                  <Route path="/chat/new" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <NewChatPage />
                     </Suspense>
                   } />
-                   */}
+                  
                   {/* Settings */}
                   <Route path="/settings" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <SettingsPage />
                     </Suspense>
                   } />
-                  {/* <Route path="/settings/profile" element={
+                  <Route path="/settings/profile" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <ProfileSettingsPage />
                     </Suspense>
-                  } /> */}
+                  } />
                   
                   {/* Billing */}
-                  {/* <Route path="/billing" element={
+                  <Route path="/billing" element={
                     <Suspense fallback={<LoadingFallback />}>
                       <BillingPage />
                     </Suspense>
-                  } /> */}
+                  } />
                   
                   {/* Business-specific routes */}
                   <Route path="/team" element={
