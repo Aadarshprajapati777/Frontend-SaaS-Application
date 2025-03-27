@@ -2,10 +2,11 @@ import axios from 'axios';
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL: import.meta.env.VITE_API_URL || 'https://backend-saas-application.onrender.com',
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 15000, // Add timeout for requests
 });
 
 // Add request interceptor for auth token
@@ -17,21 +18,51 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('Request error:', error);
+    return Promise.reject(error);
+  }
 );
 
 // Add response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle 401 Unauthorized errors
-    if (error.response && error.response.status === 401) {
-      // Clear token and redirect to login
-      console.log('Unauthorized, logging out...');
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+    // Network errors
+    if (!error.response) {
+      console.error('Network Error:', error.message);
+      // You might want to show a notification to the user here
+      return Promise.reject(new Error('Network error. Please check your connection.'));
     }
-    return Promise.reject(error);
+
+    // Handle specific HTTP status codes
+    switch (error.response.status) {
+      case 401:
+        // Unauthorized - clear token and redirect to login
+        console.log('Unauthorized, logging out...');
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        break;
+      case 403:
+        console.error('Forbidden:', error.response.data);
+        break;
+      case 404:
+        console.error('Not Found:', error.response.data);
+        break;
+      case 500:
+        console.error('Server Error:', error.response.data);
+        break;
+      default:
+        console.error(`Error ${error.response.status}:`, error.response.data);
+        break;
+    }
+    
+    // Return structured error message for components to handle
+    return Promise.reject({
+      status: error.response?.status,
+      message: error.response?.data?.error || error.message || 'Unknown error occurred',
+      data: error.response?.data
+    });
   }
 );
 

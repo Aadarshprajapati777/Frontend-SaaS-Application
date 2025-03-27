@@ -16,16 +16,23 @@ export function cn(...inputs) {
  * @returns {string} Formatted date string
  */
 export function formatDate(date, options = {}) {
+  if (!date) return 'N/A';
+  
   const defaultOptions = {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   };
   
-  return new Date(date).toLocaleDateString(
-    'en-US',
-    { ...defaultOptions, ...options }
-  );
+  try {
+    return new Date(date).toLocaleDateString(
+      'en-US',
+      { ...defaultOptions, ...options }
+    );
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return 'Invalid date';
+  }
 }
 
 /**
@@ -35,6 +42,7 @@ export function formatDate(date, options = {}) {
  */
 export function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
+  if (!bytes || isNaN(bytes)) return 'Unknown size';
   
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -50,6 +58,59 @@ export function formatFileSize(bytes) {
  * @returns {string} Truncated text
  */
 export function truncateText(text, maxLength = 100) {
-  if (!text || text.length <= maxLength) return text;
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
   return text.slice(0, maxLength) + '...';
+}
+
+/**
+ * Safely parse JSON
+ * @param {string} jsonString - The JSON string to parse
+ * @param {any} defaultValue - Default value to return if parsing fails
+ * @returns {any} Parsed object or default value
+ */
+export function safeJsonParse(jsonString, defaultValue = null) {
+  try {
+    return JSON.parse(jsonString);
+  } catch (error) {
+    console.error('JSON parse error:', error);
+    return defaultValue;
+  }
+}
+
+/**
+ * Extract error message from various error formats
+ * @param {Error|Object|string} error - The error to extract message from
+ * @returns {string} Extracted error message
+ */
+export function getErrorMessage(error) {
+  if (!error) return 'An unknown error occurred';
+  
+  if (typeof error === 'string') return error;
+  
+  if (error.response?.data?.error) return error.response.data.error;
+  if (error.response?.data?.message) return error.response.data.message;
+  if (error.message) return error.message;
+  
+  return 'An unexpected error occurred';
+}
+
+/**
+ * Validate email format
+ * @param {string} email - Email to validate
+ * @returns {boolean} Whether email is valid
+ */
+export function isValidEmail(email) {
+  if (!email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Delay for a specific number of milliseconds
+ * @param {number} ms - Milliseconds to delay
+ * @returns {Promise} Promise that resolves after the delay
+ */
+export function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 } 

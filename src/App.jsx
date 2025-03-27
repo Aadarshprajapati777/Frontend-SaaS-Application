@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, ErrorBoundary } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -15,12 +15,62 @@ import RegisterPage from './pages/register';
 // Protected pages
 import DashboardPage from './pages/dashboard';
 
+// Simple error boundary component
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Application error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="max-w-md w-full p-8 bg-white shadow-lg rounded-lg">
+            <h1 className="text-red-600 text-2xl font-bold mb-4">Something went wrong</h1>
+            <p className="text-gray-700 mb-4">
+              We're sorry, but there was an error in the application. Please try refreshing the page.
+            </p>
+            <pre className="bg-gray-100 p-4 rounded text-sm overflow-auto">
+              {this.state.error?.toString()}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Loading fallback
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+  </div>
+);
+
 // Create a React Query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
     },
   },
 });
@@ -32,54 +82,58 @@ const queryClient = new QueryClient({
  */
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
-        <AuthProvider>
-          <Routes>
-            {/* Public routes with landing layout */}
-            <Route element={<LandingLayout />}>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              
-              {/* Add more public routes as needed */}
-              <Route path="/pricing" element={<div>Pricing Page (Coming Soon)</div>} />
-              <Route path="/features" element={<div>Features Page (Coming Soon)</div>} />
-              <Route path="/about" element={<div>About Page (Coming Soon)</div>} />
-            </Route>
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AuthProvider>
+            <Suspense fallback={<LoadingFallback />}>
+              <Routes>
+                {/* Public routes with landing layout */}
+                <Route element={<LandingLayout />}>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                  
+                  {/* Add more public routes as needed */}
+                  <Route path="/pricing" element={<div>Pricing Page (Coming Soon)</div>} />
+                  <Route path="/features" element={<div>Features Page (Coming Soon)</div>} />
+                  <Route path="/about" element={<div>About Page (Coming Soon)</div>} />
+                </Route>
 
-            {/* Protected routes with app shell layout */}
-            <Route 
-              element={
-                <ProtectedRoute>
-                  <AppShell />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/dashboard" element={<DashboardPage />} />
-              
-              {/* Add more protected routes as needed */}
-              <Route path="/documents" element={<div>Documents Page (Coming Soon)</div>} />
-              <Route path="/documents/upload" element={<div>Upload Document Page (Coming Soon)</div>} />
-              <Route path="/models" element={<div>Models Page (Coming Soon)</div>} />
-              <Route path="/models/new" element={<div>Create Model Page (Coming Soon)</div>} />
-              <Route path="/chat" element={<div>Chat List Page (Coming Soon)</div>} />
-              <Route path="/chat/new" element={<div>New Chat Page (Coming Soon)</div>} />
-              <Route path="/teams" element={<div>Teams Page (Coming Soon)</div>} />
-              <Route path="/billing" element={<div>Billing Page (Coming Soon)</div>} />
-              <Route path="/settings" element={<div>Settings Page (Coming Soon)</div>} />
-              <Route path="/settings/profile" element={<div>Profile Settings Page (Coming Soon)</div>} />
-            </Route>
+                {/* Protected routes with app shell layout */}
+                <Route 
+                  element={
+                    <ProtectedRoute>
+                      <AppShell />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  
+                  {/* Add more protected routes as needed */}
+                  <Route path="/documents" element={<div>Documents Page (Coming Soon)</div>} />
+                  <Route path="/documents/upload" element={<div>Upload Document Page (Coming Soon)</div>} />
+                  <Route path="/models" element={<div>Models Page (Coming Soon)</div>} />
+                  <Route path="/models/new" element={<div>Create Model Page (Coming Soon)</div>} />
+                  <Route path="/chat" element={<div>Chat List Page (Coming Soon)</div>} />
+                  <Route path="/chat/new" element={<div>New Chat Page (Coming Soon)</div>} />
+                  <Route path="/teams" element={<div>Teams Page (Coming Soon)</div>} />
+                  <Route path="/billing" element={<div>Billing Page (Coming Soon)</div>} />
+                  <Route path="/settings" element={<div>Settings Page (Coming Soon)</div>} />
+                  <Route path="/settings/profile" element={<div>Profile Settings Page (Coming Soon)</div>} />
+                </Route>
 
-            {/* Fallback route */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
-      </Router>
-      
-      {/* Toast notifications */}
-      <Toaster position="top-right" />
-    </QueryClientProvider>
+                {/* Fallback route */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </Router>
+        
+        {/* Toast notifications */}
+        <Toaster position="top-right" />
+      </QueryClientProvider>
+    </AppErrorBoundary>
   );
 }
 
