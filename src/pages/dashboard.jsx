@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/auth-context';
+import { useAuth } from '../context/auth-utils';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { FileText, MessageCircle, Zap, BarChart2, Plus, ArrowRight } from 'lucide-react';

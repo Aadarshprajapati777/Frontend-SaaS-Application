@@ -15,6 +15,22 @@ import RegisterPage from './pages/register';
 // Protected pages
 import DashboardPage from './pages/dashboard';
 
+// Lazy-loaded protected pages
+const DocumentsPage = React.lazy(() => import('./pages/documents.jsx'));
+const DocumentUploadPage = React.lazy(() => import('./pages/documents-upload.jsx'));
+const ModelsPage = React.lazy(() => import('./pages/models.jsx'));
+// const CreateModelPage = React.lazy(() => import('./pages/models-new.jsx'));
+// const ChatListPage = React.lazy(() => import('./pages/chat.jsx'));
+// const NewChatPage = React.lazy(() => import('./pages/chat-new.jsx'));
+const SettingsPage = React.lazy(() => import('./pages/settings.jsx'));
+// const ProfileSettingsPage = React.lazy(() => import('./pages/profile-settings.jsx'));
+// const BillingPage = React.lazy(() => import('./pages/billing.jsx'));
+
+// Business-specific pages (lazy-loaded)
+const TeamManagementPage = React.lazy(() => import('./pages/team.jsx'));
+const UsageMonitorPage = React.lazy(() => import('./pages/usage.jsx'));
+const ApiKeysPage = React.lazy(() => import('./pages/api-keys.jsx'));
+
 // Simple error boundary component
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -110,17 +126,77 @@ function App() {
                 >
                   <Route path="/dashboard" element={<DashboardPage />} />
                   
-                  {/* Add more protected routes as needed */}
-                  <Route path="/documents" element={<div>Documents Page (Coming Soon)</div>} />
-                  <Route path="/documents/upload" element={<div>Upload Document Page (Coming Soon)</div>} />
-                  <Route path="/models" element={<div>Models Page (Coming Soon)</div>} />
-                  <Route path="/models/new" element={<div>Create Model Page (Coming Soon)</div>} />
-                  <Route path="/chat" element={<div>Chat List Page (Coming Soon)</div>} />
-                  <Route path="/chat/new" element={<div>New Chat Page (Coming Soon)</div>} />
-                  <Route path="/teams" element={<div>Teams Page (Coming Soon)</div>} />
-                  <Route path="/billing" element={<div>Billing Page (Coming Soon)</div>} />
-                  <Route path="/settings" element={<div>Settings Page (Coming Soon)</div>} />
-                  <Route path="/settings/profile" element={<div>Profile Settings Page (Coming Soon)</div>} />
+                  {/* Document management */}
+                  <Route path="/documents" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <DocumentsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/documents/upload" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <DocumentUploadPage />
+                    </Suspense>
+                  } />
+                  
+                  {/* Model management */}
+                  <Route path="/models" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ModelsPage />
+                    </Suspense>
+                  } />
+                  {/* <Route path="/models/new" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <CreateModelPage />
+                    </Suspense>
+                  } /> */}
+                  
+                  {/* Chat */}
+                  {/* <Route path="/chat" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ChatListPage />
+                    </Suspense>
+                  } /> */}
+                  {/* <Route path="/chat/new" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <NewChatPage />
+                    </Suspense>
+                  } />
+                   */}
+                  {/* Settings */}
+                  <Route path="/settings" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <SettingsPage />
+                    </Suspense>
+                  } />
+                  {/* <Route path="/settings/profile" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ProfileSettingsPage />
+                    </Suspense>
+                  } /> */}
+                  
+                  {/* Billing */}
+                  {/* <Route path="/billing" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <BillingPage />
+                    </Suspense>
+                  } /> */}
+                  
+                  {/* Business-specific routes */}
+                  <Route path="/team" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <TeamManagementPage />
+                    </Suspense>
+                  } />
+                  <Route path="/usage" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <UsageMonitorPage />
+                    </Suspense>
+                  } />
+                  <Route path="/api-keys" element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ApiKeysPage />
+                    </Suspense>
+                  } />
                 </Route>
 
                 {/* Fallback route */}

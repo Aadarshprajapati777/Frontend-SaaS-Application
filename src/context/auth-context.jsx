@@ -1,18 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-
-// Create context
-const AuthContext = createContext({
-  user: null,
-  loading: true,
-  error: null,
-  login: () => {},
-  register: () => {},
-  logout: () => {},
-  clearError: () => {},
-  initialLoadComplete: false,
-});
+import { AuthContext } from './auth-types';
 
 /**
  * AuthProvider Component
@@ -111,7 +100,33 @@ export function AuthProvider({ children }) {
         throw new Error('Name, email and password are required');
       }
       
-      const response = await api.post('/api/auth/register', userData);
+      // Prepare registration data
+      const registrationData = {
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+        userType: userData.userType || 'individual',
+      };
+      
+      // Add business-specific data if userType is business
+      if (userData.userType === 'business') {
+        if (!userData.businessName) {
+          throw new Error('Business name is required');
+        }
+        
+        registrationData.businessName = userData.businessName;
+        registrationData.businessSize = userData.businessSize;
+        
+        // Add additional business fields if provided
+        if (userData.website) registrationData.website = userData.website;
+        if (userData.industry) registrationData.industry = userData.industry;
+        if (userData.plan) registrationData.plan = userData.plan;
+        if (userData.teamSize) registrationData.teamSize = userData.teamSize;
+        if (userData.apiAccess !== undefined) registrationData.apiAccess = userData.apiAccess;
+      }
+      
+      // Send registration request
+      const response = await api.post('/api/auth/register', registrationData);
       
       if (!response.data || !response.data.token) {
         throw new Error('Invalid response from server');
@@ -126,8 +141,12 @@ export function AuthProvider({ children }) {
       // Set user data
       setUser(response.data.data);
       
-      // Redirect to dashboard
-      navigate('/dashboard');
+      // Redirect to dashboard or welcome page based on user type
+      if (userData.userType === 'business') {
+        navigate('/dashboard?welcome=business');
+      } else {
+        navigate('/dashboard?welcome=individual');
+      }
       
       return response.data;
     } catch (err) {
@@ -179,7 +198,4 @@ export function AuthProvider({ children }) {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-// Custom hook to use the auth context
-export const useAuth = () => useContext(AuthContext); 
+} 

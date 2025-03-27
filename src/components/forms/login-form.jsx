@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../../context/auth-context';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/auth-utils';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { isValidEmail, getErrorMessage } from '../../lib/utils';
@@ -12,6 +12,7 @@ import { isValidEmail, getErrorMessage } from '../../lib/utils';
  */
 export function LoginForm() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -20,8 +21,8 @@ export function LoginForm() {
   const [validationErrors, setValidationErrors] = useState({});
   const { login, error, clearError } = useAuth();
 
-  // Check if we have a redirect URL from the protected route
-  const from = location.state?.from || '/dashboard';
+  // Define redirect path from location state or default to dashboard
+  const redirectPath = location.state?.redirectTo || '/dashboard';
 
   // Clear errors when component mounts
   useEffect(() => {
@@ -73,13 +74,19 @@ export function LoginForm() {
       return;
     }
     
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
       await login(formData.email, formData.password);
-      // No need to navigate, auth context will handle it
-    } catch (err) {
+      // Success - navigate to the redirectPath
+      navigate(redirectPath);
+      // Clear form
+      setFormData({
+        email: '',
+        password: '',
+      });
+    } catch (error) {
       // The error is already handled by the auth context
-      console.error('Login error:', getErrorMessage(err));
+      console.error('Login error:', getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }

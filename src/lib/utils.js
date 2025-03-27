@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { format, formatDistanceToNow } from 'date-fns';
 
 /**
  * Merge multiple class names using clsx and tailwind-merge
@@ -12,23 +13,15 @@ export function cn(...inputs) {
 /**
  * Format a date string
  * @param {string|Date} date - The date to format
- * @param {Intl.DateTimeFormatOptions} options - Formatting options
+ * @param {string} formatStr - The format string, default is 'MMM d, yyyy'
  * @returns {string} Formatted date string
  */
-export function formatDate(date, options = {}) {
+export function formatDate(date, formatStr = 'MMM d, yyyy') {
   if (!date) return 'N/A';
   
-  const defaultOptions = {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  };
-  
   try {
-    return new Date(date).toLocaleDateString(
-      'en-US',
-      { ...defaultOptions, ...options }
-    );
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return format(dateObj, formatStr);
   } catch (error) {
     console.error('Date formatting error:', error);
     return 'Invalid date';
@@ -58,9 +51,7 @@ export function formatFileSize(bytes) {
  * @returns {string} Truncated text
  */
 export function truncateText(text, maxLength = 100) {
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + '...';
+  return truncate(text, maxLength);
 }
 
 /**
@@ -113,4 +104,31 @@ export function isValidEmail(email) {
  */
 export function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Formats a date as a relative time (e.g., "2 hours ago")
+ * @param {string|Date} date - The date to format
+ * @returns {string} The relative time string
+ */
+export function formatRelativeTime(date) {
+  if (!date) return '';
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return formatDistanceToNow(dateObj, { addSuffix: true });
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return '';
+  }
+}
+
+/**
+ * Truncates a string to the specified length
+ * @param {string} str - The string to truncate
+ * @param {number} length - The maximum length
+ * @returns {string} The truncated string
+ */
+export function truncate(str, length = 50) {
+  if (!str) return '';
+  return str.length > length ? `${str.substring(0, length)}...` : str;
 } 

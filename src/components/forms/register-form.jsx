@@ -1,8 +1,67 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/auth-context';
+import { useAuth } from '../../context/auth-utils';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { isValidEmail, getErrorMessage } from '../../lib/utils';
+
+// Business plans data
+const businessPlans = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    price: '49',
+    features: [
+      'Up to 5 team members',
+      '100 document uploads',
+      'Basic monitoring',
+      '5 custom AI models',
+      'Standard support'
+    ]
+  },
+  {
+    id: 'professional',
+    name: 'Professional',
+    price: '99',
+    features: [
+      'Up to 15 team members',
+      '500 document uploads',
+      'Advanced monitoring',
+      '15 custom AI models',
+      'Priority support',
+      'API access'
+    ]
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    price: '249',
+    features: [
+      'Unlimited team members',
+      'Unlimited document uploads',
+      'Advanced monitoring & analytics',
+      'Unlimited custom AI models',
+      'Dedicated support',
+      'API access with higher rate limits',
+      'Custom integrations'
+    ]
+  }
+];
+
+// Industry options
+const industryOptions = [
+  { value: 'technology', label: 'Technology & IT' },
+  { value: 'finance', label: 'Finance & Banking' },
+  { value: 'healthcare', label: 'Healthcare & Medical' },
+  { value: 'education', label: 'Education & Training' },
+  { value: 'retail', label: 'Retail & E-commerce' },
+  { value: 'manufacturing', label: 'Manufacturing' },
+  { value: 'consulting', label: 'Consulting & Professional Services' },
+  { value: 'media', label: 'Media & Entertainment' },
+  { value: 'legal', label: 'Legal Services' },
+  { value: 'nonprofit', label: 'Non-profit & NGO' },
+  { value: 'other', label: 'Other' }
+];
 
 /**
  * RegisterForm Component
@@ -17,15 +76,28 @@ export function RegisterForm() {
     userType: 'individual', // Default to individual
     businessName: '',
     businessSize: '',
+    website: '', // New field for business website
+    industry: '', // New field for business industry
+    plan: 'starter', // Default business plan
+    teamSize: '', // Estimated team size
+    apiAccess: false, // Whether API access is needed
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const { register, error, clearError } = useAuth();
+  
+  // Clear errors when component mounts
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   // Handle form input changes
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({ 
+      ...prev, 
+      [name]: type === 'checkbox' ? checked : value 
+    }));
     
     // Clear validation errors when user types
     if (validationErrors[name]) {
@@ -49,6 +121,10 @@ export function RegisterForm() {
         ...prev,
         businessName: '',
         businessSize: '',
+        website: '',
+        industry: '',
+        plan: '',
+        teamSize: ''
       }));
     }
   };
@@ -63,7 +139,7 @@ export function RegisterForm() {
     
     if (!formData.email.trim()) {
       errors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!isValidEmail(formData.email)) {
       errors.email = 'Email is invalid';
     }
     
@@ -81,10 +157,31 @@ export function RegisterForm() {
       if (!formData.businessSize) {
         errors.businessSize = 'Business size is required';
       }
+      if (formData.website && !formData.website.trim().startsWith('http')) {
+        errors.website = 'Website must start with http:// or https://';
+      }
+      if (!formData.industry) {
+        errors.industry = 'Please select your industry';
+      }
+      if (!formData.plan) {
+        errors.plan = 'Please select a subscription plan';
+      }
     }
     
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
+  };
+
+  // Transform business size to backend format
+  const mapBusinessSizeToBackendFormat = (sizeFrontend) => {
+    const sizeMap = {
+      '1-10': 'small',
+      '11-50': 'small',
+      '51-200': 'medium',
+      '201-500': 'medium',
+      '500+': 'large'
+    };
+    return sizeMap[sizeFrontend] || 'small';
   };
 
   // Handle form submission
@@ -98,10 +195,19 @@ export function RegisterForm() {
     
     try {
       setIsSubmitting(true);
-      await register(formData);
+      
+      // Create a copy of the form data
+      const userData = { ...formData };
+      
+      // If business type, map the size to backend format
+      if (userData.userType === 'business' && userData.businessSize) {
+        userData.businessSize = mapBusinessSizeToBackendFormat(userData.businessSize);
+      }
+      
+      await register(userData);
     } catch (err) {
       // Error is handled by the auth context
-      console.error('Registration error:', err);
+      console.error('Registration error:', getErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -136,6 +242,8 @@ export function RegisterForm() {
             onChange={handleChange}
             placeholder="John Doe"
             className={validationErrors.name ? "border-red-500" : ""}
+            disabled={isSubmitting}
+            autoComplete="name"
           />
           {validationErrors.name && (
             <p className="mt-1 text-sm text-red-600">{validationErrors.name}</p>
@@ -154,6 +262,8 @@ export function RegisterForm() {
             onChange={handleChange}
             placeholder="your@email.com"
             className={validationErrors.email ? "border-red-500" : ""}
+            disabled={isSubmitting}
+            autoComplete="email"
           />
           {validationErrors.email && (
             <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
@@ -172,6 +282,8 @@ export function RegisterForm() {
             onChange={handleChange}
             placeholder="•••••••••"
             className={validationErrors.password ? "border-red-500" : ""}
+            disabled={isSubmitting}
+            autoComplete="new-password"
           />
           {validationErrors.password && (
             <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
@@ -191,6 +303,7 @@ export function RegisterForm() {
                 checked={formData.userType === 'individual'}
                 onChange={handleUserTypeChange}
                 className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                disabled={isSubmitting}
               />
               <span className="ml-2 text-sm text-gray-700">Individual</span>
             </label>
@@ -202,6 +315,7 @@ export function RegisterForm() {
                 checked={formData.userType === 'business'}
                 onChange={handleUserTypeChange}
                 className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                disabled={isSubmitting}
               />
               <span className="ml-2 text-sm text-gray-700">Business</span>
             </label>
@@ -223,9 +337,55 @@ export function RegisterForm() {
                 onChange={handleChange}
                 placeholder="Acme Inc."
                 className={validationErrors.businessName ? "border-red-500" : ""}
+                disabled={isSubmitting}
               />
               {validationErrors.businessName && (
                 <p className="mt-1 text-sm text-red-600">{validationErrors.businessName}</p>
+              )}
+            </div>
+            
+            <div>
+              <label htmlFor="industry" className="block text-sm font-medium text-gray-700 mb-1">
+                Industry
+              </label>
+              <select
+                id="industry"
+                name="industry"
+                value={formData.industry}
+                onChange={handleChange}
+                className={`block w-full rounded-md border ${
+                  validationErrors.industry ? "border-red-500" : "border-gray-300"
+                } bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+                disabled={isSubmitting}
+              >
+                <option value="">Select your industry</option>
+                {industryOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {validationErrors.industry && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.industry}</p>
+              )}
+            </div>
+            
+            <div>
+              <label htmlFor="website" className="block text-sm font-medium text-gray-700 mb-1">
+                Website (optional)
+              </label>
+              <Input
+                id="website"
+                name="website"
+                type="url"
+                value={formData.website}
+                onChange={handleChange}
+                placeholder="https://yourcompany.com"
+                className={validationErrors.website ? "border-red-500" : ""}
+                disabled={isSubmitting}
+              />
+              {validationErrors.website && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.website}</p>
               )}
             </div>
             
@@ -241,6 +401,7 @@ export function RegisterForm() {
                 className={`block w-full rounded-md border ${
                   validationErrors.businessSize ? "border-red-500" : "border-gray-300"
                 } bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+                disabled={isSubmitting}
               >
                 <option value="">Select business size</option>
                 <option value="1-10">1-10 employees</option>
@@ -252,6 +413,100 @@ export function RegisterForm() {
               {validationErrors.businessSize && (
                 <p className="mt-1 text-sm text-red-600">{validationErrors.businessSize}</p>
               )}
+            </div>
+            
+            {/* Team size estimate */}
+            <div>
+              <label htmlFor="teamSize" className="block text-sm font-medium text-gray-700 mb-1">
+                Estimated Team Size (who will use the platform)
+              </label>
+              <select
+                id="teamSize"
+                name="teamSize"
+                value={formData.teamSize}
+                onChange={handleChange}
+                className={`block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+                disabled={isSubmitting}
+              >
+                <option value="">Select team size</option>
+                <option value="1-5">1-5 members</option>
+                <option value="6-15">6-15 members</option>
+                <option value="16-30">16-30 members</option>
+                <option value="31+">31+ members</option>
+              </select>
+            </div>
+            
+            {/* API access checkbox */}
+            <div className="flex items-center">
+              <input
+                id="apiAccess"
+                name="apiAccess"
+                type="checkbox"
+                checked={formData.apiAccess}
+                onChange={handleChange}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                disabled={isSubmitting}
+              />
+              <label htmlFor="apiAccess" className="ml-2 block text-sm text-gray-700">
+                I'll need API access for integration with our systems
+              </label>
+            </div>
+            
+            {/* Subscription plans */}
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Subscription Plan
+              </label>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {businessPlans.map((plan) => (
+                  <div key={plan.id} className="relative">
+                    <input
+                      type="radio"
+                      id={plan.id}
+                      name="plan"
+                      value={plan.id}
+                      checked={formData.plan === plan.id}
+                      onChange={handleChange}
+                      className="sr-only"
+                      disabled={isSubmitting}
+                    />
+                    <label
+                      htmlFor={plan.id}
+                      className={`flex flex-col h-full p-4 border rounded-lg cursor-pointer ${
+                        formData.plan === plan.id
+                          ? "border-indigo-500 ring-2 ring-indigo-500"
+                          : "border-gray-300 hover:border-gray-400"
+                      }`}
+                    >
+                      <span className="text-sm font-medium text-gray-900">{plan.name}</span>
+                      <span className="mt-1 flex items-baseline">
+                        <span className="text-lg font-semibold text-gray-900">${plan.price}</span>
+                        <span className="ml-1 text-sm text-gray-500">/mo</span>
+                      </span>
+                      <ul className="mt-4 space-y-2 text-xs text-gray-500">
+                        {plan.features.map((feature, index) => (
+                          <li key={index} className="flex items-start">
+                            <svg
+                              className="h-4 w-4 text-green-500 mr-1.5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                    </label>
+                  </div>
+                ))}
+              </div>
             </div>
           </>
         )}

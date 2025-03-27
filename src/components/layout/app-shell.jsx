@@ -1,41 +1,74 @@
-import React, { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronDown, LogOut, User, Settings, FileText, MessageSquare, Zap, Users, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Menu, X, ChevronDown, LogOut, User, Settings, FileText, 
+  MessageSquare, Zap, Users, CreditCard, PieChart, Key, Building } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
+import { useAuth } from '../../context/auth-utils';
 
-const navItems = [
-  {
-    title: 'Dashboard',
-    href: '/dashboard',
-    icon: <Zap className="h-5 w-5" />
-  },
-  {
-    title: 'Documents',
-    href: '/documents',
-    icon: <FileText className="h-5 w-5" />
-  },
-  {
-    title: 'AI Models',
-    href: '/models',
-    icon: <Zap className="h-5 w-5" />
-  },
-  {
-    title: 'Chat',
-    href: '/chat',
-    icon: <MessageSquare className="h-5 w-5" />
-  },
-  {
-    title: 'Teams',
-    href: '/teams',
-    icon: <Users className="h-5 w-5" />
-  },
-  {
-    title: 'Billing',
-    href: '/billing',
-    icon: <CreditCard className="h-5 w-5" />
+// Function to get navigation items based on user type
+const getNavItems = (user) => {
+  // Base navigation items for all users
+  const baseItems = [
+    {
+      title: 'Dashboard',
+      href: '/dashboard',
+      icon: <Zap className="h-5 w-5" />
+    },
+    {
+      title: 'Documents',
+      href: '/documents',
+      icon: <FileText className="h-5 w-5" />
+    },
+    {
+      title: 'AI Models',
+      href: '/models',
+      icon: <Zap className="h-5 w-5" />
+    },
+    {
+      title: 'Chat',
+      href: '/chat',
+      icon: <MessageSquare className="h-5 w-5" />
+    }
+  ];
+
+  // Items for all users but with different permissions/limits
+  const commonItems = [
+    {
+      title: 'Billing',
+      href: '/billing',
+      icon: <CreditCard className="h-5 w-5" />
+    }
+  ];
+
+  // Business-only navigation items
+  const businessItems = [
+    {
+      title: 'Team Management',
+      href: '/team',
+      icon: <Users className="h-5 w-5" />
+    },
+    {
+      title: 'Usage Monitor',
+      href: '/usage',
+      icon: <PieChart className="h-5 w-5" />
+    },
+    {
+      title: 'API Integration',
+      href: '/api-keys',
+      icon: <Key className="h-5 w-5" />
+    }
+  ];
+
+  // Return different navigation items based on user type
+  if (!user) return baseItems;
+  
+  if (user.userType === 'business') {
+    return [...baseItems, ...businessItems, ...commonItems];
   }
-];
+  
+  return [...baseItems, ...commonItems];
+};
 
 /**
  * AppShell Component
@@ -45,15 +78,33 @@ const navItems = [
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const location = useLocation();
+  
+  // Get navigation items based on user type
+  const navItems = getNavItems(user);
+  
+  // Check if there's a welcome parameter in URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const welcome = params.get('welcome');
+    
+    if (welcome) {
+      // You could show a welcome notification or modal here
+      console.log(`Welcome ${welcome} user!`);
+      
+      // Remove the welcome parameter from URL
+      const newUrl = `${location.pathname}${location.search.replace(`welcome=${welcome}`, '').replace(/^\?&/, '?').replace(/[?&]$/, '')}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [location]);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const toggleUserMenu = () => setUserMenuOpen(!userMenuOpen);
 
   const handleLogout = () => {
     // Call logout API and clear local storage
-    localStorage.removeItem('token');
-    navigate('/login');
+    logout();
   };
 
   return (
@@ -110,6 +161,27 @@ export function AppShell() {
               </li>
             ))}
           </ul>
+          
+          {/* Account type indicator for business accounts */}
+          {user && user.userType === 'business' && (
+            <div className="mt-6 pt-6 border-t border-indigo-800">
+              <div className="px-4 py-2">
+                <div className="flex items-center">
+                  <Building className="h-4 w-4 text-indigo-300" />
+                  <span className="ml-2 text-xs font-semibold text-indigo-300">BUSINESS ACCOUNT</span>
+                </div>
+                <div className="mt-1 text-xs text-indigo-200">
+                  {user.plan && (
+                    <span className="bg-indigo-900 px-2 py-1 rounded text-xs capitalize">
+                      {user.plan === 'starter' ? 'Starter Plan' : 
+                       user.plan === 'professional' ? 'Pro Plan' : 
+                       user.plan === 'enterprise' ? 'Enterprise Plan' : 'Free Plan'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Sidebar footer */}
@@ -144,9 +216,9 @@ export function AppShell() {
                 onClick={toggleUserMenu}
               >
                 <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white">
-                  <User className="h-5 w-5" />
+                  {user?.name ? user.name.charAt(0).toUpperCase() : <User className="h-5 w-5" />}
                 </div>
-                <span className="text-gray-700">John Doe</span>
+                <span className="text-gray-700">{user?.name || 'User'}</span>
                 <ChevronDown className="h-4 w-4 text-gray-500" />
               </button>
 

@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://backend-saas-application.onrender.com',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -125,6 +125,21 @@ export const teamAPI = {
   addTeamMember: (teamId, data) => api.post(`/api/teams/${teamId}/members`, data),
   updateMemberRole: (teamId, userId, data) => api.put(`/api/teams/${teamId}/members/${userId}`, data),
   removeTeamMember: (teamId, userId) => api.delete(`/api/teams/${teamId}/members/${userId}`),
+};
+
+// API Keys API
+export const apiKeysAPI = {
+  getApiKeys: () => api.get('/api/api-keys'),
+  createApiKey: (data) => api.post('/api/api-keys', data),
+  revokeApiKey: (id) => api.delete(`/api/api-keys/${id}`),
+  getEmbedCode: () => api.get('/api/api-keys/embed-code'),
+};
+
+// Usage API
+export const usageAPI = {
+  getUsageStats: (timeRange) => api.get(`/api/usage?timeRange=${timeRange}`),
+  getUsageDetails: () => api.get('/api/usage/details'),
+  getActivityLog: (limit = 20, offset = 0) => api.get(`/api/usage/activity?limit=${limit}&offset=${offset}`),
 };
 
 // Payment API
