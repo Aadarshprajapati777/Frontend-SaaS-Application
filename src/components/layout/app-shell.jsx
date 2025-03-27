@@ -4,7 +4,7 @@ import { Menu, X, ChevronDown, LogOut, User, Settings, FileText,
   MessageSquare, Zap, Users, CreditCard, PieChart, Key, Building } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
-import { useAuth } from '../../context/auth-utils';
+import { useAuth } from '../../context/auth-context';
 
 // Function to get navigation items based on user type
 const getNavItems = (user) => {
@@ -102,9 +102,15 @@ export function AppShell() {
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const toggleUserMenu = () => setUserMenuOpen(!userMenuOpen);
 
-  const handleLogout = () => {
-    // Call logout API and clear local storage
-    logout();
+  const handleLogout = async () => {
+    try {
+      // Call logout API and clear local storage
+      await logout();
+      console.log('Logged out successfully');
+    } catch (error) {
+      console.error('Error logging out:', error);
+      // You can add a notification here if needed
+    }
   };
 
   return (

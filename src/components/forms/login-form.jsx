@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -17,6 +17,11 @@ export function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const { login, error, clearError } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Get the redirect path from location state or default to dashboard
+  const from = location.state?.from || '/dashboard';
 
   // Handle form input changes
   const handleChange = (e) => {
@@ -66,6 +71,9 @@ export function LoginForm() {
     try {
       setIsSubmitting(true);
       await login(formData.email, formData.password);
+      
+      // Manual navigation to ensure redirection works
+      navigate(from, { replace: true });
     } catch (err) {
       // Error is handled by the auth context
       console.error('Login error:', err);

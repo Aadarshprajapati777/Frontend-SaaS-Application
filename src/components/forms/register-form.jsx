@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -21,6 +21,11 @@ export function RegisterForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const { register, error, clearError } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get the redirect path from location state or default to dashboard
+  const from = location.state?.from || '/dashboard';
 
   // Handle form input changes
   const handleChange = (e) => {
@@ -96,12 +101,26 @@ export function RegisterForm() {
       return;
     }
     
+    // Create a copy of the form data to send
+    const submissionData = { ...formData };
+    
+    // Remove empty or unnecessary fields for individual users
+    if (submissionData.userType === 'individual') {
+      delete submissionData.businessName;
+      delete submissionData.businessSize;
+    }
+    
+    console.log('Submitting registration data:', submissionData);
+    
     try {
       setIsSubmitting(true);
-      await register(formData);
+      await register(submissionData);
+      
+      // Manual navigation to ensure redirection works
+      navigate(from, { replace: true });
     } catch (err) {
       // Error is handled by the auth context
-      console.error('Registration error:', err);
+      console.error('Registration error in form:', err);
     } finally {
       setIsSubmitting(false);
     }
