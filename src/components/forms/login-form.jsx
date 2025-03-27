@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/auth-utils';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/auth-context';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { isValidEmail, getErrorMessage } from '../../lib/utils';
 
 /**
  * LoginForm Component
@@ -11,8 +10,6 @@ import { isValidEmail, getErrorMessage } from '../../lib/utils';
  * A form for user login with validation
  */
 export function LoginForm() {
-  const location = useLocation();
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -20,14 +17,6 @@ export function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const { login, error, clearError } = useAuth();
-
-  // Define redirect path from location state or default to dashboard
-  const redirectPath = location.state?.redirectTo || '/dashboard';
-
-  // Clear errors when component mounts
-  useEffect(() => {
-    clearError();
-  }, [clearError]);
 
   // Handle form input changes
   const handleChange = (e) => {
@@ -51,7 +40,7 @@ export function LoginForm() {
     
     if (!formData.email.trim()) {
       errors.email = 'Email is required';
-    } else if (!isValidEmail(formData.email)) {
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       errors.email = 'Email is invalid';
     }
     
@@ -74,19 +63,12 @@ export function LoginForm() {
       return;
     }
     
-    setIsSubmitting(true);
     try {
+      setIsSubmitting(true);
       await login(formData.email, formData.password);
-      // Success - navigate to the redirectPath
-      navigate(redirectPath);
-      // Clear form
-      setFormData({
-        email: '',
-        password: '',
-      });
-    } catch (error) {
-      // The error is already handled by the auth context
-      console.error('Login error:', getErrorMessage(error));
+    } catch (err) {
+      // Error is handled by the auth context
+      console.error('Login error:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -121,8 +103,6 @@ export function LoginForm() {
             onChange={handleChange}
             placeholder="your@email.com"
             className={validationErrors.email ? "border-red-500" : ""}
-            disabled={isSubmitting}
-            autoComplete="email"
           />
           {validationErrors.email && (
             <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
@@ -149,8 +129,6 @@ export function LoginForm() {
             onChange={handleChange}
             placeholder="•••••••••"
             className={validationErrors.password ? "border-red-500" : ""}
-            disabled={isSubmitting}
-            autoComplete="current-password"
           />
           {validationErrors.password && (
             <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
