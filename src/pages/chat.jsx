@@ -1,411 +1,1120 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { formatDate } from '../lib/utils';
-import { 
-  MessageSquare, Plus, Search, RefreshCw, AlertTriangle, 
-  Bot, Calendar, Clock, Trash2, MoreHorizontal, Star, StarOff, 
-  Calendar as CalendarIcon, ArrowUpDown, Copy
-} from 'lucide-react';
 import { Input } from '../components/ui/input';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from '../components/ui/dropdown-menu';
-import { Badge } from '../components/ui/badge';
+import { useAuth } from '../context/auth-utils';
+import {
+  Bot,
+  MessageSquare,
+  Mic,
+  MicOff,
+  File,
+  Upload,
+  RefreshCw,
+  Send,
+  Volume2,
+  VolumeX,
+  X,
+  Loader2
+} from 'lucide-react';
 import { toast } from '../components/ui/use-toast';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
- * ChatListPage Component
+ * ChatPage Component
  * 
- * Displays a list of user's previous chat conversations
+ * A full-featured chatbot interface with:
+ * - PDF document upload and interaction via Gemini AI
+ * - Voice input (STT) and output (TTS)
+ * - Animated circular chatbot UI
+ * - Gemini AI integration
  */
-export default function ChatListPage() {
-  const [chats, setChats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('recent');
+export default function ChatPage() {
+  const navigate = useNavigate();
+  const { user: _user } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [uploadedPdf, setUploadedPdf] = useState(null);
+  const [pdfContent, setPdfContent] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [botAnimationState, setBotAnimationState] = useState('idle'); // idle, listening, speaking, thinking
+  const [pdfProcessing, setPdfProcessing] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
+  const [voiceSupport, setVoiceSupport] = useState({
+    stt: null,  // null = unknown, true = supported, false = not supported
+    tts: null   // null = unknown, true = supported, false = not supported
+  });
   
-  // Mock chat data wrapped in useMemo to prevent recreation on each render
-  const mockChats = useMemo(() => [
-    {
-      id: 'chat-1',
-      title: 'Product Development Discussion',
-      model: 'Customer Support Assistant',
-      modelId: 'model-1',
-      modelType: 'custom',
-      lastMessage: 'Based on the specifications, I recommend focusing on the core features first.',
-      createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-      messageCount: 24,
-      isFavorite: true,
-    },
-    {
-      id: 'chat-2',
-      title: 'Annual Report Analysis',
-      model: 'GPT-4',
-      modelId: 'gpt-4',
-      modelType: 'system',
-      lastMessage: 'The financial results show a 15% increase in revenue compared to last year.',
-      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      messageCount: 18,
-      isFavorite: false,
-    },
-    {
-      id: 'chat-3',
-      title: 'Customer Feedback Summary',
-      model: 'Technical Documentation Bot',
-      modelId: 'model-3',
-      modelType: 'custom',
-      lastMessage: 'The most common issue reported by customers relates to the checkout process.',
-      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-      messageCount: 12,
-      isFavorite: true,
-    },
-    {
-      id: 'chat-4',
-      title: 'Meeting Notes from September 15',
-      model: 'GPT-3.5',
-      modelId: 'gpt-3.5',
-      modelType: 'system',
-      lastMessage: 'The team agreed to postpone the product launch until Q1 next year.',
-      createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      messageCount: 8,
-      isFavorite: false,
-    },
-    {
-      id: 'chat-5',
-      title: 'Legal Contract Review',
-      model: 'Legal Document Analyzer',
-      modelId: 'model-2',
-      modelType: 'custom',
-      lastMessage: 'Clause 3.4 contains ambiguous language that should be clarified before signing.',
-      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      messageCount: 15,
-      isFavorite: false,
-    },
-  ], []);
+  const fileInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const speechRecognitionRef = useRef(null);
+  const synthesisRef = useRef(null);
+  const chatContainerRef = useRef(null);
   
-  // Fetch chats data
+  // Gemini AI setup - Use useMemo to prevent the object from being recreated on every render
+  const genAI = useMemo(() => {
+    return new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyBSrP81JrsaZrrncSqh17Ue3d1yAZsqoQQ');
+  }, []);
+  
+  const modelRef = useRef(null);
+
+  // Initialize Gemini model
   useEffect(() => {
-    const fetchChats = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    try {
+      // Initialize the Gemini model
+      modelRef.current = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    } catch (error) {
+      console.error('Failed to initialize Gemini model:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to initialize AI model. Please try again.',
+        variant: 'destructive',
+      });
+    }
+    
+    // Check and initialize Web Speech API
+    const checkSpeechSupport = () => {
+      // Check for Speech Recognition support
+      const hasSpeechRecognition = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+      setVoiceSupport(prev => ({ ...prev, stt: hasSpeechRecognition }));
+      
+      if (hasSpeechRecognition) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        speechRecognitionRef.current = new SpeechRecognition();
+        speechRecognitionRef.current.continuous = true;
+        speechRecognitionRef.current.interimResults = false;
+        speechRecognitionRef.current.lang = 'en-US';
         
-        // In a real app, you would make an API call to fetch chats
-        // const response = await api.get('/chats');
-        // const data = response.data;
+        speechRecognitionRef.current.onresult = (event) => {
+          const transcript = event.results[event.results.length - 1][0].transcript;
+          setInputValue(transcript);
+          if (transcript) {
+            handleSendMessage(transcript);
+          }
+        };
         
-        // Simulate API delay for demo purposes
-        await new Promise(resolve => setTimeout(resolve, 800));
+        speechRecognitionRef.current.onerror = (event) => {
+          console.error('Speech recognition error', event.error);
+          setIsListening(false);
+          setBotAnimationState('idle');
+          toast({
+            title: 'Speech Recognition Error',
+            description: `Error: ${event.error}`,
+            variant: 'destructive',
+          });
+        };
         
-        setChats(mockChats);
-      } catch (err) {
-        console.error('Failed to fetch chats:', err);
-        setError('Failed to load chats. Please try again later.');
-      } finally {
-        setLoading(false);
+        speechRecognitionRef.current.onend = () => {
+          if (isListening) {
+            // If we're still in listening mode but it stopped, restart it
+            speechRecognitionRef.current.start();
+          }
+        };
+      }
+      
+      // Check for Speech Synthesis support
+      const hasSpeechSynthesis = 'speechSynthesis' in window;
+      setVoiceSupport(prev => ({ ...prev, tts: hasSpeechSynthesis }));
+      
+      if (hasSpeechSynthesis) {
+        synthesisRef.current = window.speechSynthesis;
+        
+        // Pre-load voices
+        if (synthesisRef.current.getVoices().length === 0) {
+          synthesisRef.current.onvoiceschanged = () => {
+            // Voices loaded
+          };
+        }
       }
     };
     
-    fetchChats();
-  }, [mockChats]);
-  
-  // Handle search
-  const handleSearch = (e) => {
-    setSearchQuery(e.target.value);
-  };
-  
-  // Toggle favorite status
-  const toggleFavorite = (chatId) => {
-    setChats(prevChats => 
-      prevChats.map(chat => 
-        chat.id === chatId ? { ...chat, isFavorite: !chat.isFavorite } : chat
-      )
-    );
+    checkSpeechSupport();
     
-    const chat = chats.find(c => c.id === chatId);
-    if (chat) {
-      toast({
-        title: chat.isFavorite ? 'Removed from favorites' : 'Added to favorites',
-        description: `"${chat.title}" has been ${chat.isFavorite ? 'removed from' : 'added to'} your favorites.`,
+    // Cleanup
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.abort();
+      }
+      if (synthesisRef.current && synthesisRef.current.speaking) {
+        synthesisRef.current.cancel();
+      }
+    };
+  }, [genAI, isListening]);
+  
+  // Scroll to bottom of chat on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+  // Handle sending a message
+  const handleSendMessage = async (voiceInput = null) => {
+    const messageText = voiceInput || inputValue;
+    
+    if (!messageText.trim()) return;
+    
+    // Add user message to chat
+    const userMessage = {
+      role: 'user',
+      content: messageText,
+      timestamp: new Date(),
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+    setBotAnimationState('thinking');
+    
+    // Stop listening if active
+    if (isListening && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
+    }
+    
+    try {
+      // Use the Gemini AI model to generate a response
+      if (!modelRef.current) {
+        throw new Error("AI model not initialized");
+      }
+      
+      let contents;
+      const generationConfig = {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1000,
+      };
+      
+      // Handle PDF content for questions
+      if (uploadedPdf && pdfContent) {
+        // Create a prompt that includes the PDF context
+        const promptWithContext = `
+You are a helpful customer support assistant.
+
+CONTEXT:
+PDF document: "${uploadedPdf.name}"
+PDF summary: ${pdfContent}
+
+USER QUERY: ${messageText}
+
+Please provide a helpful response based on the information in the PDF. 
+If the answer isn't contained in the PDF, be honest and say so.
+Answer in a friendly customer support tone.`;
+
+        contents = [
+          { role: "user", parts: [{ text: promptWithContext }] }
+        ];
+      } else {
+        // No PDF, just handle the query directly
+        contents = [
+          { role: "user", parts: [{ text: messageText }] }
+        ];
+      }
+      
+      // Generate response
+      const result = await modelRef.current.generateContent({
+        contents,
+        generationConfig,
       });
+      
+      const response = await result.response;
+      let responseContent = response.text();
+      
+      if (!responseContent || responseContent.trim().length === 0) {
+        throw new Error("The AI generated an empty response");
+      }
+      
+      // Add bot response to chat
+      const botMessage = {
+        role: 'assistant',
+        content: responseContent,
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, botMessage]);
+      
+      // Automatically speak the response if voice is enabled
+      if (voiceSupport.tts) {
+        speakText(responseContent);
+      }
+      
+    } catch (error) {
+      console.error('Failed to get AI response:', error);
+      
+      // Add error message to chat
+      setMessages(prev => [
+        ...prev, 
+        {
+          role: 'system',
+          content: `Error: ${error.message || 'Failed to get a response from the AI. Please try again.'}`,
+          timestamp: new Date(),
+          isError: true,
+        }
+      ]);
+      
+      toast({
+        title: 'AI Response Error',
+        description: error.message || 'Failed to get a response from the AI. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      setBotAnimationState('idle');
     }
   };
   
-  // Delete chat
-  const deleteChat = (chatId) => {
-    const chat = chats.find(c => c.id === chatId);
-    if (!chat) return;
+  // Process PDF file - Direct Gemini approach with robust error handling
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
     
-    // Optimistically remove the chat from the UI
-    setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+    // Clear file input value to allow re-uploading the same file
+    if (event.target) {
+      event.target.value = null;
+    }
     
-    toast({
-      title: 'Chat deleted',
-      description: `"${chat.title}" has been deleted.`,
-    });
+    // Check if it's a PDF
+    if (file.type !== 'application/pdf') {
+      toast({
+        title: 'Invalid File',
+        description: 'Please upload a PDF file.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
-    // In a real app, you would call the API to delete the chat
-    // try {
-    //   await api.delete(`/chats/${chatId}`);
-    // } catch (error) {
-    //   // If the API call fails, add the chat back
-    //   setChats(prevChats => [...prevChats, chat]);
-    //   toast({
-    //     title: 'Error',
-    //     description: 'Failed to delete chat. Please try again.',
-    //     variant: 'destructive',
-    //   });
-    // }
-  };
-  
-  // Change sort order
-  const changeSortBy = (value) => {
-    setSortBy(value);
-  };
-  
-  // Get model badge style
-  const getModelBadgeStyle = (modelType) => {
-    return modelType === 'custom' 
-      ? 'bg-purple-100 text-purple-800 hover:bg-purple-200' 
-      : 'bg-blue-100 text-blue-800 hover:bg-blue-200';
-  };
-  
-  // Sort and filter chats
-  const filteredAndSortedChats = chats
-    .filter(chat => 
-      chat.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      chat.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      if (sortBy === 'recent') {
-        return new Date(b.updatedAt) - new Date(a.updatedAt);
-      } else if (sortBy === 'oldest') {
-        return new Date(a.updatedAt) - new Date(b.updatedAt);
-      } else if (sortBy === 'a-z') {
-        return a.title.localeCompare(b.title);
-      } else if (sortBy === 'z-a') {
-        return b.title.localeCompare(a.title);
-      } else if (sortBy === 'favorites') {
-        return b.isFavorite - a.isFavorite;
+    // Check file size
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File Too Large',
+        description: 'The PDF file should be less than 10MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    setPdfProcessing(true);
+    setPdfError(null);
+    
+    try {
+      // Set the uploaded PDF file
+      setUploadedPdf(file);
+      
+      // Add system message about upload
+      setMessages(prev => [
+        ...prev, 
+        {
+          role: 'system',
+          content: `Uploading PDF: ${file.name}`,
+          timestamp: new Date(),
+        }
+      ]);
+      
+      // Use Gemini to process the PDF
+      try {
+        // Convert file to base64
+        const fileBase64 = await readFileAsBase64(file);
+        
+        // Logging file size for debugging
+        console.log(`PDF size: ${Math.round(file.size / 1024)}KB, Base64 length: ${fileBase64.length}`);
+        
+        // Create a model with appropriate configuration
+        const fileModel = genAI.getGenerativeModel({ 
+          model: "gemini-1.5-flash",
+          systemInstruction: "You are a helpful customer support assistant who is analyzing a PDF document for a user. Provide clear, concise, and accurate information based on the PDF content." 
+        });
+        
+        // Prepare prompt for the AI
+        const prompt = `You are a customer support assistant.
+        Please analyze this PDF document and provide a summary of its key contents.
+        Focus on extracting the most important information that would be useful for answering questions.
+        If there are any limitations in the PDF (like it being scan-only or password protected), please mention that.
+        Keep your summary clear and concise.`;
+        
+        // Send the PDF to Gemini
+        const result = await fileModel.generateContent({
+          contents: [{
+            role: "user",
+            parts: [
+              { text: prompt },
+              { inlineData: { 
+                  data: fileBase64, 
+                  mimeType: "application/pdf" 
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            topK: 32,
+            topP: 0.95,
+            maxOutputTokens: 1000,
+          }
+        });
+        
+        // Process the response
+        const response = await result.response;
+        const summary = response.text();
+        
+        if (!summary || summary.trim().length === 0) {
+          throw new Error("The AI couldn't generate a summary of the PDF. The file might be corrupted or have security restrictions.");
+        }
+        
+        // Store the summary
+        setPdfContent(summary);
+        
+        // Add success message
+        setMessages(prev => [
+          ...prev, 
+          {
+            role: 'system',
+            content: `PDF processed successfully: ${file.name}`,
+            timestamp: new Date(),
+          }
+        ]);
+        
+        // Add the summary from Gemini
+        setMessages(prev => [
+          ...prev, 
+          {
+            role: 'assistant',
+            content: `I've analyzed the PDF "${file.name}". ${summary}`,
+            timestamp: new Date(),
+          }
+        ]);
+        
+        toast({
+          title: 'PDF Processed',
+          description: `${file.name} has been processed successfully.`,
+        });
+        
+      } catch (error) {
+        // Log detailed error for debugging
+        console.error('Gemini PDF processing error:', error);
+        console.error('Error details:', error.message);
+        
+        let errorMessage = 'Failed to process the PDF with Gemini AI.';
+        
+        // Check for specific error types
+        if (error.message?.includes('RESOURCE_EXHAUSTED')) {
+          errorMessage = 'The PDF file is too large or complex for the AI to process.';
+        } else if (error.message?.includes('INVALID_ARGUMENT')) {
+          errorMessage = 'The PDF format is not supported or the file might be corrupted.';
+        } else if (error.message?.includes('PERMISSION_DENIED')) {
+          errorMessage = 'The PDF may be password protected or have security restrictions.';
+        } else if (error.message?.includes('UNAUTHENTICATED')) {
+          errorMessage = 'API authentication failed. Please check your API key.';
+        }
+        
+        setPdfError(errorMessage);
+        
+        // Add error message to chat
+        setMessages(prev => [
+          ...prev, 
+          {
+            role: 'system',
+            content: `Error processing PDF: ${errorMessage}`,
+            timestamp: new Date(),
+            isError: true,
+          }
+        ]);
+        
+        toast({
+          title: 'PDF Processing Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
       }
-      return 0;
+      
+    } catch (error) {
+      console.error('General file handling error:', error);
+      setPdfError('Failed to handle the PDF file');
+      
+      // Add error message
+      setMessages(prev => [
+        ...prev, 
+        {
+          role: 'system',
+          content: `Error processing PDF: ${error.message || 'Unknown error'}`,
+          timestamp: new Date(),
+          isError: true,
+        }
+      ]);
+      
+      toast({
+        title: 'PDF Processing Error',
+        description: 'Failed to process the PDF file. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      setPdfProcessing(false);
+    }
+  };
+  
+  // Improved helper function to read file as base64
+  const readFileAsBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const reader = new FileReader();
+        
+        reader.onload = () => {
+          try {
+            // Get the base64 string
+            const base64String = reader.result.split(',')[1];
+            if (!base64String) {
+              reject(new Error("Failed to convert file to base64"));
+              return;
+            }
+            resolve(base64String);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        
+        reader.onerror = (error) => {
+          console.error("FileReader error:", error);
+          reject(new Error("FileReader error: " + (error.message || "Unknown error")));
+        };
+        
+        reader.readAsDataURL(file);
+      } catch (error) {
+        console.error("readFileAsBase64 error:", error);
+        reject(error);
+      }
     });
+  };
+  
+  // Toggle speech recognition
+  const toggleListening = () => {
+    if (!voiceSupport.stt || !speechRecognitionRef.current) {
+      toast({
+        title: 'Not Supported',
+        description: 'Speech recognition is not supported in your browser.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (isListening) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
+      setBotAnimationState('idle');
+    } else {
+      try {
+        speechRecognitionRef.current.start();
+        setIsListening(true);
+        setBotAnimationState('listening');
+        toast({
+          title: 'Listening...',
+          description: 'Speak now to send a message.',
+        });
+      } catch (error) {
+        console.error('Failed to start speech recognition:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to start speech recognition. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    }
+  };
+  
+  // Text-to-speech for bot responses
+  const speakText = (text) => {
+    if (!voiceSupport.tts || !synthesisRef.current) {
+      toast({
+        title: 'Not Supported',
+        description: 'Text-to-speech is not supported in your browser.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Cancel if already speaking
+    if (synthesisRef.current.speaking) {
+      synthesisRef.current.cancel();
+      setIsSpeaking(false);
+      setBotAnimationState('idle');
+      return;
+    }
+    
+    // Create utterance
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Select a good voice if available
+    const voices = synthesisRef.current.getVoices();
+    const preferredVoice = voices.find(voice => 
+      voice.name.includes('Google') || 
+      voice.name.includes('Premium') || 
+      voice.name.includes('Enhanced')
+    ) || voices.find(voice => voice.lang === 'en-US');
+    
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setBotAnimationState('speaking');
+    };
+    
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setBotAnimationState('idle');
+    };
+    
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error', event);
+      setIsSpeaking(false);
+      setBotAnimationState('idle');
+    };
+    
+    synthesisRef.current.speak(utterance);
+  };
+  
+  // Handle file upload click
+  const handleFileButtonClick = () => {
+    fileInputRef.current.click();
+  };
+  
+  // Clear the chat
+  const handleClearChat = () => {
+    setMessages([]);
+    setUploadedPdf(null);
+    setPdfContent('');
+    setPdfError(null);
+    toast({
+      title: 'Chat Cleared',
+      description: 'The conversation has been cleared.',
+    });
+  };
+  
+  // Handle form submission
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    handleSendMessage();
+  };
+  
+  // Toggle text-to-speech
+  const toggleSpeaking = () => {
+    if (!voiceSupport.tts) {
+      toast({
+        title: 'Not Supported',
+        description: 'Text-to-speech is not supported in your browser.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (synthesisRef.current && synthesisRef.current.speaking) {
+      synthesisRef.current.cancel();
+      setIsSpeaking(false);
+      setBotAnimationState('idle');
+    } else if (messages.length > 0) {
+      // Find the last assistant message
+      const lastBotMessage = [...messages].reverse().find(m => m.role === 'assistant');
+      if (lastBotMessage) {
+        speakText(lastBotMessage.content);
+      }
+    }
+  };
+  
+  // Format timestamp
+  const formatTime = (timestamp) => {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  
+  // Render chat messages
+  const renderMessages = () => {
+    return messages.map((message, index) => {
+      // System messages (like PDF upload notifications)
+      if (message.role === 'system') {
+        return (
+          <Motion.div 
+            key={index} 
+            className="flex justify-center my-2"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className={`px-3 py-1 rounded-full text-sm ${message.isError ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'}`}>
+              {message.content}
+            </div>
+          </Motion.div>
+        );
+      }
+      
+      // User messages
+      if (message.role === 'user') {
+        return (
+          <Motion.div 
+            key={index} 
+            className="flex justify-end mb-4"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="mr-2 py-3 px-4 bg-indigo-500 rounded-bl-3xl rounded-tl-3xl rounded-tr-xl text-white max-w-md">
+              {message.content}
+              <div className="text-xs text-right mt-1 text-indigo-200">
+                {formatTime(message.timestamp)}
+              </div>
+            </div>
+          </Motion.div>
+        );
+      }
+      
+      // Assistant messages
+      return (
+        <Motion.div 
+          key={index} 
+          className="flex mb-4"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <div className="ml-2 py-3 px-4 bg-gray-200 rounded-br-3xl rounded-tr-3xl rounded-tl-xl text-gray-800 max-w-md">
+            {message.content}
+            <div className="text-xs text-right mt-1 text-gray-500">
+              {formatTime(message.timestamp)}
+            </div>
+          </div>
+        </Motion.div>
+      );
+    });
+  };
+
+  // Animated bot variations based on state
+  const botAnimations = {
+    idle: {
+      scale: [1, 1.05, 1],
+      opacity: 0.9,
+      transition: { 
+        duration: 3, 
+        repeat: Infinity,
+        repeatType: "reverse"
+      }
+    },
+    listening: {
+      scale: [1, 1.2, 1],
+      borderRadius: ["50%", "40%", "50%"],
+      backgroundColor: ["#6366f1", "#4f46e5", "#6366f1"],
+      boxShadow: [
+        "0 0 0 0 rgba(99, 102, 241, 0.7)",
+        "0 0 0 10px rgba(99, 102, 241, 0.3)",
+        "0 0 0 0 rgba(99, 102, 241, 0.7)"
+      ],
+      transition: { 
+        duration: 1.5, 
+        repeat: Infinity 
+      }
+    },
+    speaking: {
+      scale: [1, 1.1, 1, 1.1, 1],
+      rotate: [0, 1, 0, -1, 0],
+      boxShadow: [
+        "0 0 0 0 rgba(79, 70, 229, 0.4)",
+        "0 0 0 5px rgba(79, 70, 229, 0.2)",
+        "0 0 0 0 rgba(79, 70, 229, 0.4)"
+      ],
+      transition: { 
+        duration: 0.8, 
+        repeat: Infinity 
+      }
+    },
+    thinking: {
+      rotate: [0, 180, 360],
+      opacity: [0.7, 1, 0.7],
+      boxShadow: [
+        "0 0 0 0 rgba(99, 102, 241, 0.4)",
+        "0 0 0 8px rgba(99, 102, 241, 0.2)",
+        "0 0 0 0 rgba(99, 102, 241, 0.4)"
+      ],
+      transition: { 
+        duration: 2, 
+        repeat: Infinity,
+        ease: "linear"
+      }
+    }
+  };
+  
+  // Particle animation for the background
+  const generateParticles = (count) => {
+    return Array.from({ length: count }).map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 3 + 1,
+      duration: Math.random() * 20 + 10
+    }));
+  };
+  
+  const particles = useMemo(() => generateParticles(15), []);
   
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="bg-white shadow-sm rounded-lg p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
-            <p className="mt-1 text-gray-600">
-              View and manage your chat conversations
-            </p>
-          </div>
-          <div className="mt-4 md:mt-0">
-            <Button asChild>
-              <Link to="/chat/new">
-                <Plus className="h-5 w-5 mr-2" />
-                New Conversation
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-          <Input
-            type="search"
-            placeholder="Search conversations..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={handleSearch}
+    <div className="flex flex-col h-screen relative overflow-hidden">
+      {/* Background particles */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {particles.map(particle => (
+          <Motion.div
+            key={particle.id}
+            className="absolute rounded-full bg-indigo-500/10"
+            style={{
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+            }}
+            animate={{
+              x: [0, Math.random() * 100 - 50],
+              y: [0, Math.random() * 100 - 50],
+              opacity: [0, 0.5, 0],
+            }}
+            transition={{
+              duration: particle.duration,
+              repeat: Infinity,
+              ease: "linear"
+            }}
           />
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="flex whitespace-nowrap">
-              <ArrowUpDown className="h-4 w-4 mr-2" />
-              {sortBy === 'recent' && 'Most Recent'}
-              {sortBy === 'oldest' && 'Oldest First'}
-              {sortBy === 'a-z' && 'A to Z'}
-              {sortBy === 'z-a' && 'Z to A'}
-              {sortBy === 'favorites' && 'Favorites First'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => changeSortBy('recent')}>
-              Most Recent
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => changeSortBy('oldest')}>
-              Oldest First
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => changeSortBy('a-z')}>
-              A to Z
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => changeSortBy('z-a')}>
-              Z to A
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => changeSortBy('favorites')}>
-              Favorites First
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        ))}
       </div>
-
-      {/* Chat list */}
-      {loading ? (
-        <div className="flex justify-center py-10">
-          <div className="text-center">
-            <RefreshCw className="h-10 w-10 text-indigo-600 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Loading conversations...</p>
-          </div>
-        </div>
-      ) : error ? (
-        <div className="text-center py-10">
-          <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">Failed to load conversations</h3>
-          <p className="text-gray-500">{error}</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => window.location.reload()}
+      
+      {/* Header */}
+      <Motion.div 
+        className="bg-white shadow-sm p-4 flex justify-between items-center relative z-10"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex items-center">
+          <Motion.h1 
+            className="text-xl font-bold text-gray-900 flex items-center"
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.5 }}
           >
-            Try Again
-          </Button>
-        </div>
-      ) : filteredAndSortedChats.length === 0 ? (
-        <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg">
-          <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No conversations found</h3>
-          {searchQuery ? (
-            <p className="text-gray-500 mb-4">Try adjusting your search query</p>
-          ) : (
-            <>
-              <p className="text-gray-500 mb-4">Start a new conversation to get help from your AI models</p>
-              <Button asChild>
-                <Link to="/chat/new">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Start a Conversation
-                </Link>
-              </Button>
-            </>
+            <Motion.span
+              className="inline-block mr-2"
+              animate={{ rotate: [0, 10, 0, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 8 }}
+            >
+              <Bot className="h-6 w-6 text-indigo-500 mr-2" />
+            </Motion.span>
+            AI Chat Assistant
+          </Motion.h1>
+          
+          {uploadedPdf && (
+            <Motion.div 
+              className="ml-4 flex items-center bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <File className="h-4 w-4 mr-1" />
+              {uploadedPdf.name}
+              <button 
+                onClick={() => {
+                  setUploadedPdf(null);
+                  setPdfContent('');
+                }}
+                className="ml-2 text-indigo-600 hover:text-indigo-800"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Motion.div>
+          )}
+          
+          {pdfProcessing && (
+            <Motion.div 
+              className="ml-3 flex items-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-indigo-500 mr-1" />
+              <span className="text-xs text-indigo-500">Processing PDF...</span>
+            </Motion.div>
           )}
         </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredAndSortedChats.map((chat) => (
-            <Card key={chat.id} className="hover:shadow-md transition-shadow duration-200">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 mr-1 text-gray-500 hover:text-amber-500"
-                      onClick={() => toggleFavorite(chat.id)}
-                      title={chat.isFavorite ? "Remove from favorites" : "Add to favorites"}
-                    >
-                      {chat.isFavorite ? (
-                        <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-                      ) : (
-                        <StarOff className="h-5 w-5" />
-                      )}
-                    </Button>
-                    <Link to={`/chat/${chat.id}`} className="hover:underline">
-                      <CardTitle className="text-lg">{chat.title}</CardTitle>
-                    </Link>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500">
-                        <MoreHorizontal className="h-5 w-5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link to={`/chat/${chat.id}`}>
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Continue Chat
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toggleFavorite(chat.id)}>
-                        {chat.isFavorite ? (
-                          <>
-                            <StarOff className="h-4 w-4 mr-2" />
-                            Remove from Favorites
-                          </>
-                        ) : (
-                          <>
-                            <Star className="h-4 w-4 mr-2" />
-                            Add to Favorites
-                          </>
-                        )}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => deleteChat(chat.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col space-y-3">
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Bot className="h-4 w-4 mr-1" />
-                    <Link to={`/models/${chat.modelId}`} className="mr-2">
-                      <Badge variant="outline" className={getModelBadgeStyle(chat.modelType)}>
-                        {chat.model}
-                      </Badge>
-                    </Link>
-                    <span className="mx-2">•</span>
-                    <Clock className="h-4 w-4 mr-1" />
-                    <span className="mr-2">{formatDate(chat.updatedAt)}</span>
-                    <span className="mx-2">•</span>
-                    <MessageSquare className="h-4 w-4 mr-1" />
-                    <span>{chat.messageCount} messages</span>
-                  </div>
-                  
-                  <p className="text-gray-600 line-clamp-1">
-                    {chat.lastMessage}
-                  </p>
-                  
-                  <div className="flex justify-end pt-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      asChild
-                      className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
-                    >
-                      <Link to={`/chat/${chat.id}`}>
-                        Continue conversation
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearChat}
+          >
+            Clear Chat
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/')}
+          >
+            Back Home
+          </Button>
         </div>
+      </Motion.div>
+      
+      {/* Main Chat Area */}
+      <div 
+        ref={chatContainerRef}
+        className="flex-grow overflow-auto p-4 pb-28 bg-gray-50 relative"
+      >
+        {messages.length === 0 ? (
+          <Motion.div 
+            className="flex flex-col items-center justify-center h-full text-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
+            <Motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 260,
+                damping: 20,
+                delay: 0.3
+              }}
+            >
+              <Bot className="h-20 w-20 text-indigo-300 mb-4" />
+            </Motion.div>
+            <Motion.h2 
+              className="text-2xl font-bold text-gray-800 mb-2"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+            >
+              AI Chat Assistant
+            </Motion.h2>
+            <Motion.p 
+              className="text-gray-600 mb-6 max-w-md"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.6 }}
+            >
+              Upload a PDF document and ask questions about it, or just chat with the AI assistant.
+            </Motion.p>
+            <Motion.div 
+              className="flex flex-wrap gap-4 justify-center"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.7 }}
+            >
+              <Button
+                onClick={handleFileButtonClick}
+                className="flex items-center"
+                disabled={pdfProcessing}
+              >
+                {pdfProcessing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                Upload PDF
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInputValue("What can you help me with?");
+                  handleSendMessage("What can you help me with?");
+                }}
+                disabled={isLoading}
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Start Chatting
+              </Button>
+            </Motion.div>
+          </Motion.div>
+        ) : (
+          <div className="space-y-4">
+            <AnimatePresence>
+              {renderMessages()}
+            </AnimatePresence>
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+      
+      {/* Circular Animated Bot */}
+      <Motion.div 
+        className="absolute left-1/2 bottom-24 transform -translate-x-1/2 z-10"
+        initial={{ y: 100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ 
+          type: "spring",
+          stiffness: 260,
+          damping: 20,
+          delay: 0.5
+        }}
+      >
+        <Motion.div
+          className="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg cursor-pointer"
+          variants={botAnimations}
+          animate={botAnimationState}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={toggleSpeaking}
+        >
+          <Bot className="h-8 w-8 text-white" />
+        </Motion.div>
+      </Motion.div>
+      
+      {/* PDF content indicator */}
+      {uploadedPdf && pdfContent && (
+        <Motion.div
+          className="absolute bottom-24 right-4 bg-indigo-100 rounded-full px-3 py-1 text-xs text-indigo-800 flex items-center shadow-sm"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <File className="h-3 w-3 mr-1" />
+          PDF Ready
+        </Motion.div>
       )}
+      
+      {/* Input Area */}
+      <Motion.div 
+        className="bg-white border-t p-4 relative z-10"
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSubmit} className="flex items-end space-x-2">
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".pdf"
+              className="hidden"
+            />
+            
+            <Motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={handleFileButtonClick}
+                disabled={isLoading || pdfProcessing}
+                title="Upload PDF"
+                className="relative"
+              >
+                {pdfProcessing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                
+                {pdfError && (
+                  <Motion.span 
+                    className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                )}
+              </Button>
+            </Motion.div>
+            
+            <Motion.div 
+              whileHover={{ scale: 1.05 }} 
+              whileTap={{ scale: 0.95 }}
+              className={!voiceSupport.stt ? 'opacity-50' : ''}
+            >
+              <Button
+                type="button"
+                size="icon"
+                variant={isListening ? "default" : "outline"}
+                onClick={toggleListening}
+                disabled={isLoading || !voiceSupport.stt}
+                className={isListening ? "bg-red-500 hover:bg-red-600" : ""}
+                title={isListening ? "Stop Listening" : "Start Voice Input"}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
+            </Motion.div>
+            
+            <Motion.div 
+              whileHover={{ scale: 1.05 }} 
+              whileTap={{ scale: 0.95 }}
+              className={!voiceSupport.tts ? 'opacity-50' : ''}
+            >
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={toggleSpeaking}
+                disabled={isLoading || messages.length === 0 || !voiceSupport.tts}
+                className={isSpeaking ? "bg-indigo-500 text-white" : ""}
+                title={isSpeaking ? "Stop Speaking" : "Speak Last Response"}
+              >
+                {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              </Button>
+            </Motion.div>
+            
+            <div className="flex-grow relative">
+              <Input
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Type your message..."
+                disabled={isLoading || isListening}
+                className="pr-10"
+              />
+              <AnimatePresence>
+                {isListening && (
+                  <Motion.div 
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: [1, 1.5, 1] }}
+                    exit={{ scale: 0 }}
+                    transition={{ repeat: Infinity, duration: 1 }}
+                  >
+                    <div className="w-4 h-4 bg-red-500 rounded-full" />
+                  </Motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            
+            <Motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button 
+                type="submit" 
+                disabled={isLoading || inputValue.trim() === '' || isListening}
+              >
+                {isLoading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </Motion.div>
+          </form>
+          
+          {uploadedPdf && (
+            <Motion.div 
+              className="mt-2 text-xs text-gray-500"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              PDF loaded: {uploadedPdf.name} ({Math.round(uploadedPdf.size / 1024)} KB) 
+              {pdfContent ? (
+                <span className="text-green-500 ml-1">• Content extracted successfully</span>
+              ) : pdfError ? (
+                <span className="text-red-500 ml-1">• {pdfError}</span>
+              ) : null}
+            </Motion.div>
+          )}
+        </div>
+      </Motion.div>
     </div>
   );
-} 
+}
