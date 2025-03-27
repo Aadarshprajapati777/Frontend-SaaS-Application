@@ -44,6 +44,9 @@ export default function ChatPage() {
   const [botAnimationState, setBotAnimationState] = useState('idle'); // idle, listening, speaking, thinking
   const [pdfProcessing, setPdfProcessing] = useState(false);
   const [pdfError, setPdfError] = useState(null);
+  const [trainingStatus, setTrainingStatus] = useState(''); // New state for training status
+  const [companyURL, setCompanyURL] = useState(''); // New state for company URL
+  const [isTrainingComplete, setIsTrainingComplete] = useState(false); // Flag for training completion
   const [voiceSupport, setVoiceSupport] = useState({
     stt: null,  // null = unknown, true = supported, false = not supported
     tts: null   // null = unknown, true = supported, false = not supported
@@ -62,11 +65,24 @@ export default function ChatPage() {
   
   const modelRef = useRef(null);
 
+  // Customer support SaaS platform context - defined as a constant for consistency - UPDATED for URL generation
+  const CUSTOMER_SUPPORT_CONTEXT = `
+You are Gemini, integrated into a customer support SaaS platform. 
+When a company uploads a PDF document, you must exclusively use that data to ensure 100% accurate responses without hallucinations.
+After training on the document, display a "training completed" message and generate a unique website URL for the company's trained model.
+If the question cannot be answered using the provided PDF data, acknowledge this limitation politely.
+If no document is uploaded, function as a normal helpful assistant.
+Always maintain a professional, friendly customer support tone in all interactions.
+`;
+
   // Initialize Gemini model
   useEffect(() => {
     try {
-      // Initialize the Gemini model
-      modelRef.current = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // Initialize the Gemini model with customer support context
+      modelRef.current = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        systemInstruction: CUSTOMER_SUPPORT_CONTEXT
+      });
     } catch (error) {
       console.error('Failed to initialize Gemini model:', error);
       toast({
@@ -190,27 +206,36 @@ export default function ChatPage() {
       
       // Handle PDF content for questions
       if (uploadedPdf && pdfContent) {
-        // Create a prompt that includes the PDF context
+        // Create a prompt that includes the PDF context for customer support
         const promptWithContext = `
-You are a helpful customer support assistant.
+You are Gemini integrated into a customer support SaaS platform.
 
-CONTEXT:
-PDF document: "${uploadedPdf.name}"
-PDF summary: ${pdfContent}
+COMPANY KNOWLEDGE BASE:
+Document: "${uploadedPdf.name}"
+Content summary: ${pdfContent}
+Training status: ${isTrainingComplete ? 'Completed' : 'In progress'}
+${companyURL ? `Company support URL: ${companyURL}` : ''}
 
-USER QUERY: ${messageText}
+CUSTOMER QUERY: ${messageText}
 
-Please provide a helpful response based on the information in the PDF. 
-If the answer isn't contained in the PDF, be honest and say so.
-Answer in a friendly customer support tone.`;
+INSTRUCTIONS:
+1. Your primary role is to assist customers based EXCLUSIVELY on the information in the company's knowledge base.
+2. If the answer is clearly available in the knowledge base, provide it in a helpful, professional manner.
+3. If the answer is partially available, provide what you can based strictly on the knowledge base.
+4. If the answer is NOT available in the knowledge base, politely inform the customer that this information is not in your current documents.
+5. DO NOT invent, hallucinate, or make up information that is not provided in the knowledge base.
+6. Maintain a friendly, professional customer support tone throughout.
+${isTrainingComplete ? '7. If asked about training or the URL, confirm that training is complete and provide the URL details.' : '7. If asked about training, mention that it is still in progress.'}
+
+Respond to the customer's query now:`;
 
         contents = [
           { role: "user", parts: [{ text: promptWithContext }] }
         ];
       } else {
-        // No PDF, just handle the query directly
+        // No PDF, operate as a standard helpful assistant
         contents = [
-          { role: "user", parts: [{ text: messageText }] }
+          { role: "user", parts: [{ text: `${messageText}` }] }
         ];
       }
       
@@ -266,7 +291,7 @@ Answer in a friendly customer support tone.`;
     }
   };
   
-  // Process PDF file - Direct Gemini approach with robust error handling
+  // Process PDF file - Direct Gemini approach with robust error handling and URL generation
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -275,6 +300,11 @@ Answer in a friendly customer support tone.`;
     if (event.target) {
       event.target.value = null;
     }
+    
+    // Reset previous training state
+    setTrainingStatus('');
+    setCompanyURL('');
+    setIsTrainingComplete(false);
     
     // Check if it's a PDF
     if (file.type !== 'application/pdf') {
@@ -310,10 +340,15 @@ Answer in a friendly customer support tone.`;
         ...prev, 
         {
           role: 'system',
-          content: `Uploading PDF: ${file.name}`,
+          content: `Uploading company documentation: ${file.name}`,
           timestamp: new Date(),
         }
       ]);
+      
+      // Update training status
+      setTrainingStatus('Training in progress...');
+      // Set bot animation to training state
+      setBotAnimationState('training');
       
       // Use Gemini to process the PDF
       try {
@@ -326,15 +361,22 @@ Answer in a friendly customer support tone.`;
         // Create a model with appropriate configuration
         const fileModel = genAI.getGenerativeModel({ 
           model: "gemini-1.5-flash",
-          systemInstruction: "You are a helpful customer support assistant who is analyzing a PDF document for a user. Provide clear, concise, and accurate information based on the PDF content." 
+          systemInstruction: CUSTOMER_SUPPORT_CONTEXT
         });
         
-        // Prepare prompt for the AI
-        const prompt = `You are a customer support assistant.
-        Please analyze this PDF document and provide a summary of its key contents.
-        Focus on extracting the most important information that would be useful for answering questions.
-        If there are any limitations in the PDF (like it being scan-only or password protected), please mention that.
-        Keep your summary clear and concise.`;
+        // Prepare prompt for the AI - enhanced for customer support context
+        const prompt = `
+You are operating as part of a customer support SaaS platform.
+
+This PDF document contains company-specific knowledge base information that customers will ask questions about.
+Please:
+1. Analyze this PDF document thoroughly
+2. Extract the key information a customer support agent would need
+3. Summarize the document's main topics and content
+4. Note any product features, troubleshooting steps, or policies mentioned
+5. This information will be used exclusively to answer customer questions
+
+Format your summary in a clear, structured way that would help a support agent quickly understand what information is available in this document.`;
         
         // Send the PDF to Gemini
         const result = await fileModel.generateContent({
@@ -368,29 +410,40 @@ Answer in a friendly customer support tone.`;
         // Store the summary
         setPdfContent(summary);
         
+        // Generate a unique URL for the company's trained model
+        // In a real application, this would be handled by the backend
+        const companySlug = file.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+        const uniqueId = Math.random().toString(36).substring(2, 8);
+        const generatedURL = `https://yourapp.com/support/${companySlug}-${uniqueId}`;
+        setCompanyURL(generatedURL);
+        
+        // Set training status to complete
+        setTrainingStatus('Training completed successfully.');
+        setIsTrainingComplete(true);
+        
         // Add success message
         setMessages(prev => [
           ...prev, 
           {
             role: 'system',
-            content: `PDF processed successfully: ${file.name}`,
+            content: `Company knowledge base processed successfully: ${file.name}`,
             timestamp: new Date(),
           }
         ]);
         
-        // Add the summary from Gemini
+        // Add the summary from Gemini with training completion message
         setMessages(prev => [
           ...prev, 
           {
             role: 'assistant',
-            content: `I've analyzed the PDF "${file.name}". ${summary}`,
+            content: `I've analyzed your company documentation "${file.name}" and completed training on your data. I'm ready to provide customer support based exclusively on this information.\n\n${summary}\n\nYour company's unique support URL has been generated: ${generatedURL}`,
             timestamp: new Date(),
           }
         ]);
         
         toast({
-          title: 'PDF Processed',
-          description: `${file.name} has been processed successfully.`,
+          title: 'Knowledge Base Ready',
+          description: `${file.name} has been processed. The chatbot will now answer based on this document.`,
         });
         
       } catch (error) {
@@ -398,7 +451,11 @@ Answer in a friendly customer support tone.`;
         console.error('Gemini PDF processing error:', error);
         console.error('Error details:', error.message);
         
-        let errorMessage = 'Failed to process the PDF with Gemini AI.';
+        // Reset training status
+        setTrainingStatus('');
+        setIsTrainingComplete(false);
+        
+        let errorMessage = 'Failed to process the company documentation with Gemini AI.';
         
         // Check for specific error types
         if (error.message?.includes('RESOURCE_EXHAUSTED')) {
@@ -418,14 +475,14 @@ Answer in a friendly customer support tone.`;
           ...prev, 
           {
             role: 'system',
-            content: `Error processing PDF: ${errorMessage}`,
+            content: `Error processing company documentation: ${errorMessage}`,
             timestamp: new Date(),
             isError: true,
           }
         ]);
         
         toast({
-          title: 'PDF Processing Error',
+          title: 'Document Processing Error',
           description: errorMessage,
           variant: 'destructive',
         });
@@ -435,19 +492,23 @@ Answer in a friendly customer support tone.`;
       console.error('General file handling error:', error);
       setPdfError('Failed to handle the PDF file');
       
+      // Reset training status
+      setTrainingStatus('');
+      setIsTrainingComplete(false);
+      
       // Add error message
       setMessages(prev => [
         ...prev, 
         {
           role: 'system',
-          content: `Error processing PDF: ${error.message || 'Unknown error'}`,
+          content: `Error processing documentation: ${error.message || 'Unknown error'}`,
           timestamp: new Date(),
           isError: true,
         }
       ]);
       
       toast({
-        title: 'PDF Processing Error',
+        title: 'Document Processing Error',
         description: 'Failed to process the PDF file. Please try again.',
         variant: 'destructive',
       });
@@ -694,10 +755,15 @@ Answer in a friendly customer support tone.`;
     });
   };
 
-  // Animated bot variations based on state
+  // Animated bot variations based on state - enhanced for customer support SaaS
   const botAnimations = {
     idle: {
       scale: [1, 1.05, 1],
+      boxShadow: [
+        "0 0 10px rgba(99, 102, 241, 0.4)",
+        "0 0 20px rgba(99, 102, 241, 0.6)",
+        "0 0 10px rgba(99, 102, 241, 0.4)"
+      ],
       opacity: 0.9,
       transition: { 
         duration: 3, 
@@ -745,8 +811,53 @@ Answer in a friendly customer support tone.`;
         repeat: Infinity,
         ease: "linear"
       }
+    },
+    // New animation state for when company documentation is loaded
+    knowledgeReady: {
+      scale: [1, 1.15, 1],
+      backgroundColor: ["#4f46e5", "#10B981", "#4f46e5"],
+      boxShadow: [
+        "0 0 10px rgba(16, 185, 129, 0.4)",
+        "0 0 30px rgba(16, 185, 129, 0.7)",
+        "0 0 10px rgba(16, 185, 129, 0.4)"
+      ],
+      transition: { 
+        duration: 3, 
+        repeat: Infinity,
+        repeatType: "reverse"
+      }
+    },
+    // New animation state for when the bot is training on the PDF
+    training: {
+      scale: [1, 1.1, 1],
+      rotate: [0, 360],
+      backgroundColor: ["#4f46e5", "#3730a3", "#4f46e5"],
+      boxShadow: [
+        "0 0 10px rgba(99, 102, 241, 0.4)",
+        "0 0 20px rgba(99, 102, 241, 0.8)",
+        "0 0 10px rgba(99, 102, 241, 0.4)"
+      ],
+      transition: { 
+        duration: 2, 
+        repeat: Infinity,
+        ease: "linear"
+      }
     }
   };
+  
+  // Effect to change bot animation state when PDF is loaded or training is complete
+  useEffect(() => {
+    if (isTrainingComplete && !isLoading && !isListening && !isSpeaking) {
+      // When training is complete, show the knowledgeReady state
+      setBotAnimationState('knowledgeReady');
+    } else if (uploadedPdf && pdfContent && !isLoading && !isListening && !isSpeaking) {
+      // If we have a PDF loaded and the bot is idle, show the knowledgeReady state
+      setBotAnimationState('knowledgeReady');
+    } else if (!isLoading && !isListening && !isSpeaking) {
+      // Otherwise, if the bot is not doing anything else, set to idle
+      setBotAnimationState('idle');
+    }
+  }, [uploadedPdf, pdfContent, isLoading, isListening, isSpeaking, isTrainingComplete]);
   
   // Particle animation for the background
   const generateParticles = (count) => {
@@ -760,6 +871,27 @@ Answer in a friendly customer support tone.`;
   };
   
   const particles = useMemo(() => generateParticles(15), []);
+  
+  // Copy URL to clipboard
+  const copyURLToClipboard = () => {
+    if (!companyURL) return;
+    
+    navigator.clipboard.writeText(companyURL)
+      .then(() => {
+        toast({
+          title: 'URL Copied',
+          description: 'The unique support URL has been copied to your clipboard.',
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to copy URL:', error);
+        toast({
+          title: 'Copy Failed',
+          description: 'Failed to copy the URL. Please try again.',
+          variant: 'destructive',
+        });
+      });
+  };
   
   return (
     <div className="flex flex-col h-screen relative overflow-hidden">
@@ -845,6 +977,24 @@ Answer in a friendly customer support tone.`;
               <span className="text-xs text-indigo-500">Processing PDF...</span>
             </Motion.div>
           )}
+          
+          {isTrainingComplete && (
+            <Motion.div 
+              className="ml-3 flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Motion.span
+                className="inline-block"
+                animate={{ rotate: [0, 360] }}
+                transition={{ duration: 2, repeat: 1 }}
+              >
+                ✓
+              </Motion.span>
+              <span className="ml-1">Training Complete</span>
+            </Motion.div>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <Button
@@ -869,6 +1019,62 @@ Answer in a friendly customer support tone.`;
         ref={chatContainerRef}
         className="flex-grow overflow-auto p-4 pb-28 bg-gray-50 relative"
       >
+        {/* PDF Training Overlay */}
+        {trainingStatus && trainingStatus.includes('progress') && (
+          <Motion.div 
+            className="absolute inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-20"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Motion.div 
+              className="bg-white rounded-lg p-6 shadow-xl max-w-md text-center"
+              initial={{ scale: 0.9, y: -20 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+            >
+              <Motion.div
+                className="w-16 h-16 rounded-full bg-indigo-500 mx-auto mb-4 flex items-center justify-center"
+                animate={{
+                  rotate: [0, 360],
+                  scale: [1, 1.1, 1],
+                  boxShadow: [
+                    "0 0 0 0 rgba(99, 102, 241, 0.7)",
+                    "0 0 0 10px rgba(99, 102, 241, 0.3)",
+                    "0 0 0 0 rgba(99, 102, 241, 0.7)"
+                  ]
+                }}
+                transition={{ 
+                  duration: 2, 
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              >
+                <Bot className="h-8 w-8 text-white" />
+              </Motion.div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Training in Progress</h3>
+              <p className="text-gray-600 mb-4">
+                Analyzing and training AI on your company documentation. This may take a moment depending on document size.
+              </p>
+              <Motion.div 
+                className="w-full bg-gray-200 rounded-full h-2 mb-4"
+                initial={{ width: 0 }}
+                animate={{ width: "100%" }}
+                transition={{ duration: 5 }}
+              >
+                <Motion.div 
+                  className="bg-indigo-500 h-2 rounded-full"
+                  animate={{ width: ["0%", "100%", "0%"] }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                />
+              </Motion.div>
+              <p className="text-sm text-gray-500">
+                Once complete, you'll receive a unique URL for integrating this custom-trained chatbot.
+              </p>
+            </Motion.div>
+          </Motion.div>
+        )}
+        
         {messages.length === 0 ? (
           <Motion.div 
             className="flex flex-col items-center justify-center h-full text-center"
@@ -894,7 +1100,7 @@ Answer in a friendly customer support tone.`;
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
             >
-              AI Chat Assistant
+              Customer Support AI Assistant
             </Motion.h2>
             <Motion.p 
               className="text-gray-600 mb-6 max-w-md"
@@ -902,7 +1108,7 @@ Answer in a friendly customer support tone.`;
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.6 }}
             >
-              Upload a PDF document and ask questions about it, or just chat with the AI assistant.
+              Upload your company documentation to train the AI on your specific content. Your customers will receive accurate support based exclusively on your knowledge base. After training, you'll receive a unique URL for integrating the chatbot into your existing systems.
             </Motion.p>
             <Motion.div 
               className="flex flex-wrap gap-4 justify-center"
@@ -912,7 +1118,7 @@ Answer in a friendly customer support tone.`;
             >
               <Button
                 onClick={handleFileButtonClick}
-                className="flex items-center"
+                className="flex items-center bg-indigo-600 hover:bg-indigo-700"
                 disabled={pdfProcessing}
               >
                 {pdfProcessing ? (
@@ -920,7 +1126,7 @@ Answer in a friendly customer support tone.`;
                 ) : (
                   <Upload className="h-4 w-4 mr-2" />
                 )}
-                Upload PDF
+                Upload Company Documentation
               </Button>
               <Button
                 variant="outline"
@@ -931,7 +1137,7 @@ Answer in a friendly customer support tone.`;
                 disabled={isLoading}
               >
                 <MessageSquare className="h-4 w-4 mr-2" />
-                Start Chatting
+                Start Chat
               </Button>
             </Motion.div>
           </Motion.div>
@@ -972,13 +1178,57 @@ Answer in a friendly customer support tone.`;
       {/* PDF content indicator */}
       {uploadedPdf && pdfContent && (
         <Motion.div
-          className="absolute bottom-24 right-4 bg-indigo-100 rounded-full px-3 py-1 text-xs text-indigo-800 flex items-center shadow-sm"
+          className="absolute bottom-24 right-4 bg-green-100 rounded-full px-3 py-1 text-xs text-green-800 flex items-center shadow-sm"
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
         >
           <File className="h-3 w-3 mr-1" />
-          PDF Ready
+          Knowledge Base Active
+        </Motion.div>
+      )}
+      
+      {/* Training status and company URL display */}
+      {isTrainingComplete && (
+        <Motion.div
+          className="absolute bottom-32 right-4 left-4 md:left-auto md:right-4 md:w-72 bg-white rounded-lg p-3 shadow-lg border border-green-200"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="text-sm font-medium text-green-600 mb-1">
+            {trainingStatus}
+          </div>
+          {companyURL && (
+            <div className="mt-2 text-xs">
+              <div className="text-gray-600 mb-1">Your company's unique support URL:</div>
+              <div className="flex items-center gap-2">
+                <a 
+                  href={companyURL} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-indigo-600 hover:text-indigo-800 break-all font-medium flex-1"
+                >
+                  {companyURL}
+                </a>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="h-6 w-6 p-0" 
+                  onClick={copyURLToClipboard}
+                  title="Copy URL to clipboard"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </Button>
+              </div>
+              <div className="mt-2 text-gray-500 text-xs">
+                Share this URL with your team to access the customer support interface trained on your documentation.
+              </div>
+            </div>
+          )}
         </Motion.div>
       )}
       
