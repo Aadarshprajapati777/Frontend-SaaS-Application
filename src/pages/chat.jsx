@@ -4,7 +4,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { useAuth } from '../context/auth-utils';
+import { useAuth } from '../context/auth-context';
 import {
   Bot,
   MessageSquare,
@@ -30,10 +30,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * - Voice input (STT) and output (TTS)
  * - Animated circular chatbot UI
  * - Gemini AI integration
+ * - Backend integration for storing summaries and generating unique links
  */
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { user: _user } = useAuth();
+  const { user } = useAuth();
+  console.log('User:', user);
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -66,14 +68,7 @@ export default function ChatPage() {
   const modelRef = useRef(null);
 
   // Customer support SaaS platform context - defined as a constant for consistency - UPDATED for URL generation
-  const CUSTOMER_SUPPORT_CONTEXT = `
-You are Gemini, integrated into a customer support SaaS platform. 
-When a company uploads a PDF document, you must exclusively use that data to ensure 100% accurate responses without hallucinations.
-After training on the document, display a "training completed" message and generate a unique website URL for the company's trained model.
-If the question cannot be answered using the provided PDF data, acknowledge this limitation politely.
-If no document is uploaded, function as a normal helpful assistant.
-Always maintain a professional, friendly customer support tone in all interactions.
-`;
+  const CUSTOMER_SUPPORT_CONTEXT = `sumarize the document and provide a summary of the document`;
 
   // Initialize Gemini model
   useEffect(() => {
@@ -207,27 +202,7 @@ Always maintain a professional, friendly customer support tone in all interactio
       // Handle PDF content for questions
       if (uploadedPdf && pdfContent) {
         // Create a prompt that includes the PDF context for customer support
-        const promptWithContext = `
-You are Gemini integrated into a customer support SaaS platform.
-
-COMPANY KNOWLEDGE BASE:
-Document: "${uploadedPdf.name}"
-Content summary: ${pdfContent}
-Training status: ${isTrainingComplete ? 'Completed' : 'In progress'}
-${companyURL ? `Company support URL: ${companyURL}` : ''}
-
-CUSTOMER QUERY: ${messageText}
-
-INSTRUCTIONS:
-1. Your primary role is to assist customers based EXCLUSIVELY on the information in the company's knowledge base.
-2. If the answer is clearly available in the knowledge base, provide it in a helpful, professional manner.
-3. If the answer is partially available, provide what you can based strictly on the knowledge base.
-4. If the answer is NOT available in the knowledge base, politely inform the customer that this information is not in your current documents.
-5. DO NOT invent, hallucinate, or make up information that is not provided in the knowledge base.
-6. Maintain a friendly, professional customer support tone throughout.
-${isTrainingComplete ? '7. If asked about training or the URL, confirm that training is complete and provide the URL details.' : '7. If asked about training, mention that it is still in progress.'}
-
-Respond to the customer's query now:`;
+        const promptWithContext = `sumarize the document and provide a summary of the document`;
 
         contents = [
           { role: "user", parts: [{ text: promptWithContext }] }
@@ -410,12 +385,90 @@ Format your summary in a clear, structured way that would help a support agent q
         // Store the summary
         setPdfContent(summary);
         
-        // Generate a unique URL for the company's trained model
-        // In a real application, this would be handled by the backend
-        const companySlug = file.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
-        const uniqueId = Math.random().toString(36).substring(2, 8);
-        const generatedURL = `https://yourapp.com/support/${companySlug}-${uniqueId}`;
-        setCompanyURL(generatedURL);
+        // Get the user ID from auth context - ensure we have a valid user ID
+        let userId = 'anonymous';
+        
+        if (user && user._id) {
+          userId = user._id;
+        } else {
+          // Try to fetch the user data if not already available
+          try {
+            const token = localStorage.getItem('token');
+            if (token) {
+              const userResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/me`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+              
+              if (userResponse.ok) {
+                const userData = await userResponse.json();
+                if (userData.data && userData.data.id) {
+                  userId = userData.data.id;
+                }
+              }
+            }
+          } catch (userError) {
+            console.error('Error fetching user data:', userError);
+            // Continue with anonymous user ID as fallback
+          }
+        }
+        
+        // Store the summary in the backend and get the unique link
+        try {
+          const backendResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/companies/summary`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              userId,
+              fileName: file.name,
+              summary
+            })
+          });
+          
+          if (!backendResponse.ok) {
+            throw new Error(`Failed to store summary in backend: ${backendResponse.statusText}`);
+          }
+          
+          const backendData = await backendResponse.json();
+          
+          if (!backendData.success) {
+            throw new Error(backendData.error || 'Failed to store summary in backend');
+          }
+          
+          // Use the URL from the backend response
+          const backendGeneratedURL = `${window.location.origin}${backendData.data.chatbotUrl}`;
+          setCompanyURL(backendGeneratedURL);
+          
+          // Save relevant data to localStorage for cross-app access
+          localStorage.setItem(`company_${backendData.data.companyId}_url`, backendGeneratedURL);
+          localStorage.setItem(`company_${backendData.data.companyId}_name`, file.name);
+          localStorage.setItem(`company_${backendData.data.companyId}_summary`, summary);
+          
+          console.log('Summary stored in backend successfully:', backendData);
+        } catch (backendError) {
+          console.error('Error storing summary in backend:', backendError);
+          
+          // Fall back to local URL generation if backend call fails
+          const timestamp = Date.now();
+          const uniqueId = Math.random().toString(36).substring(2, 8);
+          const fallbackURL = `${window.location.origin}/chatbot/summary/${userId}-${timestamp}-${uniqueId}`;
+          setCompanyURL(fallbackURL);
+          
+          // Add a warning message
+          setMessages(prev => [
+            ...prev, 
+            {
+              role: 'system',
+              content: `Warning: Could not save to server. Using local URL instead: ${fallbackURL}`,
+              timestamp: new Date(),
+              isError: true,
+            }
+          ]);
+        }
         
         // Set training status to complete
         setTrainingStatus('Training completed successfully.');
@@ -436,7 +489,7 @@ Format your summary in a clear, structured way that would help a support agent q
           ...prev, 
           {
             role: 'assistant',
-            content: `I've analyzed your company documentation "${file.name}" and completed training on your data. I'm ready to provide customer support based exclusively on this information.\n\n${summary}\n\nYour company's unique support URL has been generated: ${generatedURL}`,
+            content: `I've analyzed your company documentation "${file.name}" and completed training on your data. I'm ready to provide customer support based exclusively on this information.\n\n${summary}\n\nYour company's unique support URL has been generated: ${companyURL}`,
             timestamp: new Date(),
           }
         ]);
