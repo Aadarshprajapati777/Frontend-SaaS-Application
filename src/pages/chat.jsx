@@ -438,9 +438,8 @@ Format your summary in a clear, structured way that would help a support agent q
           if (!backendData.success) {
             throw new Error(backendData.error || 'Failed to store summary in backend');
           }
-          
           // Use the URL from the backend response
-          const backendGeneratedURL = `${window.location.origin}${backendData.data.chatbotUrl}`;
+          const backendGeneratedURL = `${import.meta.env.NEXT_PUBLIC_CHATBOT_URL}${backendData.data.chatbotUrl}`;
           setCompanyURL(backendGeneratedURL);
           
           // Save relevant data to localStorage for cross-app access
