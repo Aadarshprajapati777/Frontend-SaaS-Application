@@ -395,7 +395,7 @@ Format your summary in a clear, structured way that would help a support agent q
           try {
             const token = localStorage.getItem('token');
             if (token) {
-              const userResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/me`, {
+              const userResponse = await fetch(`${import.meta.env.VITE_API_URL || 'https://backend-saas-application.onrender.com'}/api/auth/me`, {
                 headers: {
                   'Authorization': `Bearer ${token}`
                 }
@@ -416,7 +416,7 @@ Format your summary in a clear, structured way that would help a support agent q
         
         // Store the summary in the backend and get the unique link
         try {
-          const backendResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/companies/summary`, {
+          const backendResponse = await fetch(`${import.meta.env.VITE_API_URL || 'https://backend-saas-application.onrender.com'}/api/companies/summary`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -440,7 +440,7 @@ Format your summary in a clear, structured way that would help a support agent q
           }
           
           // Use the URL from the backend response
-          const backendGeneratedURL = `${window.location.origin}${backendData.data.chatbotUrl}`;
+          const backendGeneratedURL = `https://chatbot-server-liart.vercel.app${backendData.data.chatbotUrl}`;
           setCompanyURL(backendGeneratedURL);
           
           // Save relevant data to localStorage for cross-app access
