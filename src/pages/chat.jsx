@@ -440,7 +440,7 @@ Format your summary in a clear, structured way that would help a support agent q
           }
           
           // Use the URL from the backend response
-          const backendGeneratedURL = `https://chatbot-server-liart.vercel.app${backendData.data.chatbotUrl}`;
+          const backendGeneratedURL = `${window.location.origin}${backendData.data.chatbotUrl}`;
           setCompanyURL(backendGeneratedURL);
           
           // Save relevant data to localStorage for cross-app access
